@@ -39,6 +39,7 @@ from domain.industry import (
     DEFAULT_EXCLUDE_KEYWORDS,
     DEFAULT_MUST_CONTAIN_KEYWORDS,
 )
+from config.schema import AppConfig
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
@@ -95,8 +96,32 @@ def verify_credentials(credentials: HTTPBasicCredentials = Depends(security)):
         )
     return credentials.username
 
+def _appconfig_to_flat_dict(config: AppConfig) -> Dict[str, Any]:
+    """将 AppConfig 转换为 server/app.py 兼容的扁平字典格式"""
+    return {
+        'keywords': ','.join(config.industry.include),
+        'exclude': ','.join(config.industry.exclude),
+        'must_contain': ','.join(config.industry.must_contain),
+        'interval': config.schedule.interval_minutes,
+        'enabled_sites': config.crawler.enabled_sites,
+        'email_enabled': config.email is not None,
+        'sms_enabled': config.sms is not None,
+        'voice_enabled': config.voice is not None,
+        'wechat_enabled': config.wechat is not None,
+        'ai_enabled': config.ai.enable,
+        'email_configs': [],
+        'sms_config': config.sms.model_dump() if config.sms else {},
+        'voice_config': config.voice.model_dump() if config.voice else {},
+        'wechat_config': config.wechat.model_dump() if config.wechat else {},
+        'ai_config': config.ai.model_dump(),
+        'contacts': [c.model_dump() for c in config.contacts],
+        'use_selenium': config.crawler.use_selenium,
+    }
+
+
 def load_config() -> Dict[str, Any]:
-    """加载配置"""
+    """加载配置（使用统一配置系统，返回兼容格式）"""
+    # 基础默认配置（从 domain 动态生成）
     default_config = {
         'keywords': ','.join(DEFAULT_INCLUDE_KEYWORDS),
         'exclude': ','.join(DEFAULT_EXCLUDE_KEYWORDS),
@@ -115,7 +140,7 @@ def load_config() -> Dict[str, Any]:
         'voice_enabled': False,
         'wechat_enabled': False,
         'ai_enabled': False,
-        'email_configs': [],  # 开源版本默认空
+        'email_configs': [],
         'sms_config': {
             'provider': 'aliyun',
             'sign_name': '',
@@ -137,20 +162,24 @@ def load_config() -> Dict[str, Any]:
         'ai_config': {
             'enable': False,
             'base_url': 'https://api.deepseek.com/chat/completions',
-            'api_key': '',  # 请填入您的API Key
+            'api_key': '',
             'model': 'deepseek-chat'
         },
-        'contacts': [],  # 开源版本默认空
-        'use_selenium': True  # Selenium浏览器模式开关
+        'contacts': [],
+        'use_selenium': True
     }
     
     if os.path.exists(CONFIG_FILE):
         try:
             with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
                 saved_config = json.load(f)
-                default_config.update(saved_config)
+                # 使用 AppConfig 做校验和合并
+                merged = {**default_config, **saved_config}
+                app_config = AppConfig.from_legacy_dict(merged)
+                # 转回扁平字典保持兼容
+                return _appconfig_to_flat_dict(app_config)
         except Exception as e:
-            logger.error(f"加载配置失败: {e}")
+            logger.error(f"配置校验失败，使用默认配置: {e}")
     
     return default_config
 

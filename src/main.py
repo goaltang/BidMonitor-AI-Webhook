@@ -7,8 +7,6 @@ import argparse
 import logging
 from datetime import datetime
 
-import yaml
-
 # 添加src目录到路径
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -17,19 +15,19 @@ from crawler.registry import get_all_crawlers
 from matcher.keyword import KeywordMatcher
 from notifier.email import EmailNotifier
 from scheduler.runner import Scheduler
+from config.loader import load_config as _load_config
+from config.schema import AppConfig
 
 
-def load_config(config_path: str) -> dict:
-    """加载配置文件"""
-    with open(config_path, 'r', encoding='utf-8') as f:
-        return yaml.safe_load(f)
+def load_config(config_path: str) -> AppConfig:
+    """加载配置文件（统一入口）"""
+    return _load_config(path=config_path, fill_defaults=True)
 
 
-def setup_logging(config: dict):
+def setup_logging(config: AppConfig):
     """配置日志"""
-    log_config = config.get('logging', {})
-    level = getattr(logging, log_config.get('level', 'INFO').upper())
-    log_file = log_config.get('file')
+    level = getattr(logging, config.logging.level.upper())
+    log_file = config.logging.file
     
     handlers = [logging.StreamHandler()]
     
@@ -47,30 +45,31 @@ def setup_logging(config: dict):
 class BidMonitor:
     """招标监控器主类"""
     
-    def __init__(self, config: dict):
+    def __init__(self, config: AppConfig):
         self.config = config
         self.logger = logging.getLogger("monitor")
         
         # 初始化组件
         self.storage = Storage()
         self.matcher = KeywordMatcher(
-            include_keywords=config['keywords']['include'],
-            exclude_keywords=config['keywords'].get('exclude', [])
+            include_keywords=config.industry.include,
+            exclude_keywords=config.industry.exclude,
+            must_contain_keywords=config.industry.must_contain,
         )
-        self.notifier = EmailNotifier(config['email'])
+        self.notifier = EmailNotifier(config.email.model_dump())
         
         # 初始化爬虫
         self.crawlers = []
-        crawler_config = config.get('crawler', {})
-        enabled_sites = crawler_config.get('enabled_sites', ['ccgp', 'chinabidding', 'ebnew'])
+        crawler_cfg = config.crawler
+        enabled_sites = crawler_cfg.enabled_sites or ['ccgp', 'chinabidding', 'ebnew']
         
         crawler_classes = get_all_crawlers()
         for site in enabled_sites:
             if site in crawler_classes:
                 crawler_class = crawler_classes[site]
                 crawler = crawler_class({
-                    **crawler_config,
-                    'search_keywords': config['keywords']['include'][:3]  # 使用前3个关键字搜索
+                    **crawler_cfg.model_dump(),
+                    'search_keywords': config.industry.include[:3]  # 使用前3个关键字搜索
                 })
                 self.crawlers.append(crawler)
                 self.logger.info(f"已启用爬虫: {site}")
@@ -178,13 +177,12 @@ def main():
         monitor.run_once()
     else:
         # 启动定时任务
-        schedule_config = config.get('schedule', {})
         scheduler = Scheduler(
-            interval_minutes=schedule_config.get('interval_minutes', 30),
-            run_immediately=schedule_config.get('run_immediately', True)
+            interval_minutes=config.schedule.interval_minutes,
+            run_immediately=config.schedule.run_immediately
         )
         
-        logger.info(f"启动定时监控，间隔 {schedule_config.get('interval_minutes', 30)} 分钟")
+        logger.info(f"启动定时监控，间隔 {config.schedule.interval_minutes} 分钟")
         logger.info("按 Ctrl+C 停止程序")
         
         scheduler.start(monitor.run_once)

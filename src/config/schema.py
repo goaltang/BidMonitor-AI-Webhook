@@ -116,7 +116,7 @@ class AppConfig(BaseModel):
         """
         kwargs: Dict[str, Any] = {}
         
-        # 行业关键词（兼容两种格式）
+        # 行业关键词（兼容三种格式：嵌套dict / list / 逗号分隔字符串）
         keywords_data = data.get("keywords", {})
         if isinstance(keywords_data, dict):
             kwargs["industry"] = IndustryConfig(
@@ -126,6 +126,13 @@ class AppConfig(BaseModel):
             )
         elif isinstance(keywords_data, list):
             kwargs["industry"] = IndustryConfig(include=keywords_data)
+        elif isinstance(keywords_data, str):
+            # 逗号分隔字符串（server/app.py 格式）
+            kwargs["industry"] = IndustryConfig(
+                include=[k.strip() for k in keywords_data.split(",") if k.strip()],
+                exclude=[k.strip() for k in data.get("exclude", "").split(",") if k.strip()],
+                must_contain=[k.strip() for k in data.get("must_contain", "").split(",") if k.strip()],
+            )
         
         # 爬虫配置
         if "crawler" in data:
