@@ -3100,8 +3100,8 @@ class MonitorGUI:
                     'prompt': prompt
                 })
                 is_rel, reason = guard.check_relevance(
-                    "某省风力发电场无人机智能巡检服务采购项目", 
-                    "本项目采购2025年度风电场无人机精细化巡检服务，包括可见光及红外检测...",
+                    "某市变电站10kV高低压开关柜设备采购及安装项目", 
+                    "本项目采购高低压成套开关柜设备，包括高压环网柜、低压配电柜、箱式变电站等，用于新建变电站配电系统...",
                     raise_on_error=True  # 测试时需要捕获真实错误
                 )
                 self.root.after(0, lambda: messagebox.showinfo(
