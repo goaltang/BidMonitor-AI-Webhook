@@ -38,6 +38,12 @@ except ImportError:
         from notifier.wechat import WeChatNotifier
         from notifier.voice import VoiceNotifier
         from utils.system import AutoStart, SystemTray, TRAY_AVAILABLE
+        from domain.sites import (
+            get_sites, get_site_config, get_categories,
+            get_sites_by_category, get_default_enabled_sites,
+            get_all_site_keys, validate_enabled_sites, SITES,
+        )
+        from crawler.health import SiteHealthChecker
     except ImportError:
         # 开发环境Fallback
         import sys
@@ -228,50 +234,98 @@ class EmailDialog:
 
 
 class CustomSiteDialog:
-    """添加/编辑自定义网站对话框"""
+    """添加/编辑自定义网站对话框 - 支持规则引擎配置"""
     
     def __init__(self, parent, site_data=None):
         self.result = None
+        self.site_data = site_data or {}
         
         self.dialog = tk.Toplevel(parent)
         self.dialog.title("自定义网站")
-        self.dialog.geometry("400x200")
+        self.dialog.geometry("520x520")
         self.dialog.resizable(False, False)
         self.dialog.transient(parent)
         self.dialog.grab_set()
         
         # 居中
         self.dialog.update_idletasks()
-        x = parent.winfo_x() + (parent.winfo_width() - 400) // 2
-        y = parent.winfo_y() + (parent.winfo_height() - 200) // 2
+        x = parent.winfo_x() + (parent.winfo_width() - 520) // 2
+        y = parent.winfo_y() + (parent.winfo_height() - 520) // 2
         self.dialog.geometry(f"+{x}+{y}")
         
-        self._create_widgets(site_data)
+        self._create_widgets()
         
-    def _create_widgets(self, site_data):
-        frame = ttk.Frame(self.dialog, padding="20")
-        frame.pack(fill=tk.BOTH, expand=True)
+    def _create_widgets(self):
+        main = ttk.Frame(self.dialog, padding="15")
+        main.pack(fill=tk.BOTH, expand=True)
         
-        # 网站名称
-        ttk.Label(frame, text="网站名称:").grid(row=0, column=0, sticky=tk.W, pady=10)
-        self.name_var = tk.StringVar()
-        ttk.Entry(frame, textvariable=self.name_var, width=30).grid(row=0, column=1, sticky=tk.EW, pady=10)
+        # === 基本信息 ===
+        basic = ttk.LabelFrame(main, text="基本信息", padding="10")
+        basic.pack(fill=tk.X, pady=5)
         
-        # 网址
-        ttk.Label(frame, text="列表页URL:").grid(row=1, column=0, sticky=tk.W, pady=10)
-        self.url_var = tk.StringVar()
-        ttk.Entry(frame, textvariable=self.url_var, width=30).grid(row=1, column=1, sticky=tk.EW, pady=10)
+        ttk.Label(basic, text="网站名称:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        self.name_var = tk.StringVar(value=self.site_data.get('name', ''))
+        ttk.Entry(basic, textvariable=self.name_var, width=40).grid(row=0, column=1, sticky=tk.EW, pady=5, padx=5)
         
-        # 按钮
-        btn_frame = ttk.Frame(frame)
-        btn_frame.grid(row=2, column=0, columnspan=2, pady=20)
-        ttk.Button(btn_frame, text="确定", command=self._on_ok).pack(side=tk.LEFT, padx=10)
-        ttk.Button(btn_frame, text="取消", command=self.dialog.destroy).pack(side=tk.LEFT, padx=10)
+        ttk.Label(basic, text="列表页URL:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        self.url_var = tk.StringVar(value=self.site_data.get('url', ''))
+        ttk.Entry(basic, textvariable=self.url_var, width=40).grid(row=1, column=1, sticky=tk.EW, pady=5, padx=5)
         
-        if site_data:
-            self.name_var.set(site_data.get('name', ''))
-            self.url_var.set(site_data.get('url', ''))
-            
+        self.selenium_var = tk.BooleanVar(value=self.site_data.get('use_selenium', False))
+        ttk.Checkbutton(basic, text="使用 Selenium 渲染（动态页面）", variable=self.selenium_var).grid(
+            row=2, column=0, columnspan=2, sticky=tk.W, pady=5)
+        
+        # === 解析规则（高级） ===
+        rules_frame = ttk.LabelFrame(main, text="解析规则（可选，留空则自动提取所有链接）", padding="10")
+        rules_frame.pack(fill=tk.X, pady=5)
+        
+        rules = self.site_data.get('rules', {})
+        
+        ttk.Label(rules_frame, text="列表项选择器:").grid(row=0, column=0, sticky=tk.W, pady=3)
+        self.list_sel_var = tk.StringVar(value=rules.get('list_selector', ''))
+        ttk.Entry(rules_frame, textvariable=self.list_sel_var, width=40).grid(row=0, column=1, sticky=tk.EW, pady=3, padx=5)
+        ttk.Label(rules_frame, text="例: .list-item 或 ul li", foreground="gray").grid(row=0, column=2, sticky=tk.W)
+        
+        ttk.Label(rules_frame, text="标题选择器:").grid(row=1, column=0, sticky=tk.W, pady=3)
+        self.title_sel_var = tk.StringVar(value=rules.get('title_selector', ''))
+        ttk.Entry(rules_frame, textvariable=self.title_sel_var, width=40).grid(row=1, column=1, sticky=tk.EW, pady=3, padx=5)
+        ttk.Label(rules_frame, text="例: .title 或 a", foreground="gray").grid(row=1, column=2, sticky=tk.W)
+        
+        ttk.Label(rules_frame, text="链接选择器:").grid(row=2, column=0, sticky=tk.W, pady=3)
+        self.url_sel_var = tk.StringVar(value=rules.get('url_selector', 'a'))
+        ttk.Entry(rules_frame, textvariable=self.url_sel_var, width=40).grid(row=2, column=1, sticky=tk.EW, pady=3, padx=5)
+        ttk.Label(rules_frame, text="例: a", foreground="gray").grid(row=2, column=2, sticky=tk.W)
+        
+        ttk.Label(rules_frame, text="日期选择器:").grid(row=3, column=0, sticky=tk.W, pady=3)
+        self.date_sel_var = tk.StringVar(value=rules.get('date_selector', ''))
+        ttk.Entry(rules_frame, textvariable=self.date_sel_var, width=40).grid(row=3, column=1, sticky=tk.EW, pady=3, padx=5)
+        ttk.Label(rules_frame, text="可选", foreground="gray").grid(row=3, column=2, sticky=tk.W)
+        
+        # 翻页
+        ttk.Label(rules_frame, text="翻页模式:").grid(row=4, column=0, sticky=tk.W, pady=3)
+        self.page_mode_var = tk.StringVar(value=rules.get('pagination_mode', 'none'))
+        ttk.Combobox(rules_frame, textvariable=self.page_mode_var,
+                     values=["none", "page_param"], state="readonly", width=15).grid(row=4, column=1, sticky=tk.W, pady=3, padx=5)
+        
+        ttk.Label(rules_frame, text="翻页URL模板:").grid(row=5, column=0, sticky=tk.W, pady=3)
+        self.page_pattern_var = tk.StringVar(value=rules.get('pagination_pattern', ''))
+        ttk.Entry(rules_frame, textvariable=self.page_pattern_var, width=40).grid(row=5, column=1, sticky=tk.EW, pady=3, padx=5)
+        ttk.Label(rules_frame, text="例: https://xxx?page={page}", foreground="gray").grid(row=5, column=2, sticky=tk.W)
+        
+        ttk.Label(rules_frame, text="最大页数:").grid(row=6, column=0, sticky=tk.W, pady=3)
+        self.max_pages_var = tk.StringVar(value=str(rules.get('max_pages', 1)))
+        ttk.Spinbox(rules_frame, from_=1, to=20, width=10, textvariable=self.max_pages_var).grid(row=6, column=1, sticky=tk.W, pady=3, padx=5)
+        
+        # === 提示 ===
+        ttk.Label(main, text="💡 提示: 使用浏览器开发者工具（F12）检查元素，复制 CSS 选择器",
+                  foreground="gray", font=("Microsoft YaHei", 9), wraplength=480).pack(anchor=tk.W, pady=5)
+        
+        # === 按钮 ===
+        btn_frame = ttk.Frame(main)
+        btn_frame.pack(fill=tk.X, pady=10)
+        ttk.Button(btn_frame, text="确定", command=self._on_ok, width=12).pack(side=tk.RIGHT, padx=5)
+        ttk.Button(btn_frame, text="取消", command=self.dialog.destroy, width=12).pack(side=tk.RIGHT, padx=5)
+        
     def _on_ok(self):
         name = self.name_var.get().strip()
         url = self.url_var.get().strip()
@@ -285,8 +339,41 @@ class CustomSiteDialog:
         if not url.startswith(('http://', 'https://')):
             messagebox.showerror("错误", "网址必须以 http:// 或 https:// 开头")
             return
+        
+        result = {
+            'name': name,
+            'url': url,
+            'use_selenium': self.selenium_var.get(),
+        }
+        
+        # 收集规则（如果有填写）
+        rules = {}
+        list_sel = self.list_sel_var.get().strip()
+        if list_sel:
+            rules['list_selector'] = list_sel
+            title_sel = self.title_sel_var.get().strip()
+            if title_sel:
+                rules['title_selector'] = title_sel
+            url_sel = self.url_sel_var.get().strip()
+            if url_sel:
+                rules['url_selector'] = url_sel
+            date_sel = self.date_sel_var.get().strip()
+            if date_sel:
+                rules['date_selector'] = date_sel
+            page_mode = self.page_mode_var.get()
+            if page_mode != 'none':
+                rules['pagination_mode'] = page_mode
+            page_pattern = self.page_pattern_var.get().strip()
+            if page_pattern:
+                rules['pagination_pattern'] = page_pattern
+            max_pages = self.max_pages_var.get().strip()
+            if max_pages:
+                rules['max_pages'] = int(max_pages)
+        
+        if rules:
+            result['rules'] = rules
             
-        self.result = {'name': name, 'url': url}
+        self.result = result
         self.dialog.destroy()
         
     def show(self):
@@ -817,24 +904,119 @@ class VoiceConfigDialog(tk.Toplevel):
             messagebox.showerror("错误", f"呼叫异常: {e}")
 
 
-class SiteManagerDialog:
-    """网站管理对话框"""
+class SiteConfigDialog(tk.Toplevel):
+    """单个网站独立配置对话框"""
     
-    def __init__(self, parent, enabled_sites, custom_sites):
+    def __init__(self, parent, site_key: str, site_name: str, current_config: Dict[str, Any]):
+        super().__init__(parent)
+        self.title(f"⚙️ 配置: {site_name}")
+        self.geometry("420x360")
+        self.resizable(False, False)
+        self.transient(parent)
+        self.grab_set()
+        
+        # 居中
+        self.update_idletasks()
+        x = parent.winfo_x() + (parent.winfo_width() - 420) // 2
+        y = parent.winfo_y() + (parent.winfo_height() - 360) // 2
+        self.geometry(f"+{x}+{y}")
+        
+        self.site_key = site_key
+        self.result = None
+        self.current = dict(current_config) if current_config else {}
+        
+        self._create_widgets()
+    
+    def _create_widgets(self):
+        main = ttk.Frame(self, padding="15")
+        main.pack(fill=tk.BOTH, expand=True)
+        
+        ttk.Label(main, text="以下配置将覆盖全局爬虫设置", foreground="gray",
+                  font=("Microsoft YaHei", 9)).pack(anchor=tk.W, pady=(0, 10))
+        
+        # 超时
+        row = ttk.Frame(main)
+        row.pack(fill=tk.X, pady=4)
+        ttk.Label(row, text="超时(秒):", width=12).pack(side=tk.LEFT)
+        self.timeout_var = tk.StringVar(value=str(self.current.get('timeout', '')))
+        ttk.Spinbox(row, from_=5, to=120, width=10, textvariable=self.timeout_var).pack(side=tk.LEFT)
+        ttk.Label(row, text="留空=继承全局", foreground="gray").pack(side=tk.LEFT, padx=5)
+        
+        # 重试次数
+        row = ttk.Frame(main)
+        row.pack(fill=tk.X, pady=4)
+        ttk.Label(row, text="最大重试:", width=12).pack(side=tk.LEFT)
+        self.retry_var = tk.StringVar(value=str(self.current.get('max_retries', '')))
+        ttk.Spinbox(row, from_=0, to=10, width=10, textvariable=self.retry_var).pack(side=tk.LEFT)
+        ttk.Label(row, text="留空=继承全局", foreground="gray").pack(side=tk.LEFT, padx=5)
+        
+        # 请求间隔
+        row = ttk.Frame(main)
+        row.pack(fill=tk.X, pady=4)
+        ttk.Label(row, text="请求间隔(秒):", width=12).pack(side=tk.LEFT)
+        self.delay_var = tk.StringVar(value=str(self.current.get('request_delay', '')))
+        ttk.Spinbox(row, from_=1, to=60, width=10, textvariable=self.delay_var).pack(side=tk.LEFT)
+        ttk.Label(row, text="留空=继承全局", foreground="gray").pack(side=tk.LEFT, padx=5)
+        
+        # Selenium
+        row = ttk.Frame(main)
+        row.pack(fill=tk.X, pady=4)
+        self.selenium_var = tk.BooleanVar(value=self.current.get('use_selenium', False))
+        ttk.Checkbutton(row, text="强制使用 Selenium 渲染", variable=self.selenium_var).pack(side=tk.LEFT)
+        
+        # 分隔线
+        ttk.Separator(main, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
+        
+        # 按钮
+        btn = ttk.Frame(main)
+        btn.pack(fill=tk.X, pady=5)
+        ttk.Button(btn, text="恢复默认", command=self._reset).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn, text="取消", command=self.destroy).pack(side=tk.RIGHT, padx=5)
+        ttk.Button(btn, text="保存", command=self._save).pack(side=tk.RIGHT, padx=5)
+    
+    def _reset(self):
+        """清空独立配置，恢复继承全局"""
+        self.result = {}
+        self.destroy()
+    
+    def _save(self):
+        cfg: Dict[str, Any] = {}
+        t = self.timeout_var.get().strip()
+        if t:
+            cfg['timeout'] = int(t)
+        r = self.retry_var.get().strip()
+        if r:
+            cfg['max_retries'] = int(r)
+        d = self.delay_var.get().strip()
+        if d:
+            cfg['request_delay'] = int(d)
+        if self.selenium_var.get():
+            cfg['use_selenium'] = True
+        self.result = cfg
+        self.destroy()
+
+
+class SiteManagerDialog:
+    """网站管理对话框 - 支持分类折叠面板"""
+    
+    def __init__(self, parent, enabled_sites, custom_sites, site_configs=None):
         self.result = None
         self.enabled_sites = set(enabled_sites)
-        self.custom_sites = list(custom_sites) # copy
+        self.custom_sites = list(custom_sites)  # copy
+        self.site_configs = dict(site_configs) if site_configs else {}
+        self.health_checker = SiteHealthChecker()
+        self.health_labels = {}  # {site_key: label_widget}
         
         self.dialog = tk.Toplevel(parent)
         self.dialog.title("网站源管理")
-        self.dialog.geometry("600x500")
+        self.dialog.geometry("620x600")
         self.dialog.transient(parent)
         self.dialog.grab_set()
         
         # 居中
         self.dialog.update_idletasks()
-        x = parent.winfo_x() + (parent.winfo_width() - 600) // 2
-        y = parent.winfo_y() + (parent.winfo_height() - 500) // 2
+        x = parent.winfo_x() + (parent.winfo_width() - 620) // 2
+        y = parent.winfo_y() + (parent.winfo_height() - 600) // 2
         self.dialog.geometry(f"+{x}+{y}")
         
         self._create_widgets()
@@ -860,18 +1042,18 @@ class SiteManagerDialog:
         frame = ttk.Frame(notebook, padding="10")
         notebook.add(frame, text="内置网站")
         
-        # 获取所有内置爬虫
-        try:
-            # from monitor_core import get_all_crawlers (Moved to top)
-            all_crawlers = get_all_crawlers()
-        except Exception as e:
-            # 尝试在父窗口记录日志（如果父窗口有log方法）
-            # 这里我们只能打印到控制台或者弹窗
-            messagebox.showerror("错误", f"无法加载内置网站: {e}")
-            all_crawlers = {}
-            
+        # 顶部控制按钮
+        ctrl_frame = ttk.Frame(frame)
+        ctrl_frame.pack(fill=tk.X, pady=(0, 8))
+        
+        ttk.Button(ctrl_frame, text="📂 展开全部", command=self._expand_all).pack(side=tk.LEFT, padx=3)
+        ttk.Button(ctrl_frame, text="📁 折叠全部", command=self._collapse_all).pack(side=tk.LEFT, padx=3)
+        ttk.Button(ctrl_frame, text="✅ 全选", command=self._select_all).pack(side=tk.LEFT, padx=3)
+        ttk.Button(ctrl_frame, text="❌ 取消全选", command=self._deselect_all).pack(side=tk.LEFT, padx=3)
+        ttk.Button(ctrl_frame, text="🔍 检测健康", command=self._check_health).pack(side=tk.RIGHT, padx=3)
+        
         # 滚动区域
-        canvas = tk.Canvas(frame)
+        canvas = tk.Canvas(frame, highlightthickness=0)
         scrollbar = ttk.Scrollbar(frame, orient="vertical", command=canvas.yview)
         scrollable_frame = ttk.Frame(canvas)
         
@@ -883,73 +1065,136 @@ class SiteManagerDialog:
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
         
-        # 网站列表
+        # 分类折叠面板
         self.builtin_vars = {}
+        self.category_frames = {}   # {分类名: inner_frame}
+        self.category_labels = {}   # {分类名: label_widget}
+        self.category_expanded = {} # {分类名: bool}
+        self.config_buttons = {}    # {site_key: button}
         
-        # 网站中文名映射 - 适配高低压成套设备行业
-        site_names = {
-            # === 通用招标平台（核心） ===
-            'chinabidding': '中国采购与招标网',
-            'chinabiddingcc': '中国采购招标网',
-            'chinazbcg': '中国招投标信息网',
-            'ebidding': '国义招标',
-            'zjycgzx': '浙江云采购中心',
-            # === 电网公司（配电侧核心客户） ===
-            'sgcc': '国家电网电子商务平台',
-            'csg': '中国南方电网供应链服务平台',
-            'sgccetp': '国网电子商务平台电工交易专区',
-            # === 电力行业通用平台 ===
-            'dlzb': '中国电力招标网',
-            'cpeinet': '中国电力设备信息网',
-            # === 发电集团（电厂配电设备需求） ===
-            'gdtzb': '国电投招标网',
-            'chng': '华能集团电子商务平台',
-            'chdtp': '中国华电电子商务平台',
-            'cdt': '中国大唐电子商务平台',
-            'neep': '国家能源e购',
-            'ceic': '国家能源集团生态协作平台',
-            'crpower': '华润电力',
-            'cgnpc': '中广核电子商务平台',
-            'dongfang': '东方电气',
-            'ctg': '中国三峡电子采购平台',
-            'sdicc': '国投集团电子采购平台',
-            'powerbeijing': '北京京能电子商务平台',
-            'hghn': '华光环能数字化采购管理平台',
-            'cecep': '中国节能环保电子采购平台',
-            'gdg': '广州发展集团电子采购平台',
-            # === 工程总包（项目含配电设备） ===
-            'powerchina': '中国电建采购电子商务平台',
-            'powerchina_bid': '中国电建采购招标数智化平台',
-            'powerchina_ec': '中国电建设备物资集中采购平台',
-            'powerchina_scm': '中国电建供应链云服务平台',
-            'ceec': '中国能建电子采购平台',
-            'crc': '华润集团守正电子招标采购平台',
-        }
+        sites_by_cat = get_sites_by_category()
         
-        for key, name in site_names.items():
-            var = tk.BooleanVar(value=key in self.enabled_sites)
-            self.builtin_vars[key] = var
+        for cat_name, sites in sites_by_cat.items():
+            if not sites:
+                continue
             
-            cb = ttk.Checkbutton(scrollable_frame, text=f"{name}", variable=var)
-            cb.pack(anchor=tk.W, pady=2)
-        
-        # 全选/取消全选按钮 (放在列表上方)
-        btn_frame = ttk.Frame(frame)
-        btn_frame.pack(fill=tk.X, pady=(0, 10))
-        
-        def select_all():
-            for var in self.builtin_vars.values():
-                var.set(True)
-        
-        def deselect_all():
-            for var in self.builtin_vars.values():
-                var.set(False)
-        
-        ttk.Button(btn_frame, text="✅ 全选", command=select_all).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="❌ 取消全选", command=deselect_all).pack(side=tk.LEFT, padx=5)
+            cat_frame = ttk.LabelFrame(scrollable_frame, text=f"{cat_name} ({len(sites)}个)", padding="8")
+            cat_frame.pack(fill=tk.X, pady=4, anchor=tk.N)
             
+            # 内部容器，用于折叠控制
+            inner = ttk.Frame(cat_frame)
+            inner.pack(fill=tk.X, expand=True)
+            
+            self.category_frames[cat_name] = inner
+            self.category_expanded[cat_name] = True
+            
+            # 每个网站的复选框
+            for site in sites:
+                key = site["key"]
+                name = site["name"]
+                var = tk.BooleanVar(value=key in self.enabled_sites)
+                self.builtin_vars[key] = var
+                
+                row = ttk.Frame(inner)
+                row.pack(fill=tk.X, pady=1)
+                
+                # 健康状态图标
+                health_lbl = ttk.Label(row, text="⚪", width=2)
+                health_lbl.pack(side=tk.LEFT)
+                self.health_labels[key] = health_lbl
+                
+                cb = ttk.Checkbutton(row, text=name, variable=var)
+                cb.pack(side=tk.LEFT)
+                
+                # 爬虫类型标记
+                ctype = site.get("crawler_type", "custom")
+                if ctype == "builtin":
+                    ttk.Label(row, text="[专用]", foreground="#1976d2",
+                              font=("Microsoft YaHei", 8)).pack(side=tk.RIGHT, padx=5)
+                
+                # 独立配置按钮
+                has_cfg = key in self.site_configs and self.site_configs[key]
+                btn_text = "🔧" if has_cfg else "⚙️"
+                btn = tk.Button(row, text=btn_text, width=3, relief=tk.FLAT,
+                                cursor="hand2",
+                                command=lambda k=key, n=name: self._config_site(k, n))
+                btn.pack(side=tk.RIGHT, padx=2)
+                self.config_buttons[key] = btn
+                
+            # 点击 LabelFrame 标题栏折叠/展开（通过绑定点击事件到 LabelFrame 的子组件）
+            cat_frame.bind("<Button-1>", lambda e, c=cat_name: self._toggle_category(c))
+            for child in cat_frame.winfo_children():
+                child.bind("<Button-1>", lambda e, c=cat_name: self._toggle_category(c))
+        
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
+        
+        # 鼠标滚轮绑定
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        
+    def _toggle_category(self, cat_name):
+        """折叠/展开指定分类"""
+        inner = self.category_frames.get(cat_name)
+        if inner is None:
+            return
+        
+        expanded = self.category_expanded.get(cat_name, True)
+        if expanded:
+            inner.pack_forget()
+            self.category_expanded[cat_name] = False
+        else:
+            inner.pack(fill=tk.X, expand=True)
+            self.category_expanded[cat_name] = True
+            
+    def _expand_all(self):
+        for cat_name in self.category_frames:
+            if not self.category_expanded.get(cat_name, True):
+                self._toggle_category(cat_name)
+                
+    def _collapse_all(self):
+        for cat_name in self.category_frames:
+            if self.category_expanded.get(cat_name, True):
+                self._toggle_category(cat_name)
+                
+    def _select_all(self):
+        for var in self.builtin_vars.values():
+            var.set(True)
+            
+    def _deselect_all(self):
+        for var in self.builtin_vars.values():
+            var.set(False)
+    
+    def _check_health(self):
+        """批量检测所有内置网站的健康状态"""
+        sites = {key: cfg['url'] for key, cfg in get_sites().items()}
+        
+        self.dialog.title("网站源管理 - 检测中...")
+        
+        def on_done(key: str, result):
+            self.dialog.after(0, lambda: self._update_health_label(key, result))
+        
+        def run_check():
+            self.health_checker.check_all_sites(sites, callback=on_done)
+            self.dialog.after(0, lambda: self.dialog.title("网站源管理"))
+        
+        threading.Thread(target=run_check, daemon=True).start()
+    
+    def _update_health_label(self, key: str, result):
+        """更新单个网站的健康状态标签"""
+        lbl = self.health_labels.get(key)
+        if not lbl:
+            return
+        icon = {"ok": "🟢", "slow": "🟡", "down": "🔴"}.get(result.status, "⚪")
+        lbl.config(text=icon)
+        
+        # 失效网站灰显复选框
+        if result.status == "down":
+            var = self.builtin_vars.get(key)
+            if var and var.get():
+                # 保持选中但视觉提示已失效
+                pass
         
     def _create_custom_tab(self, notebook):
         frame = ttk.Frame(notebook, padding="10")
@@ -1006,6 +1251,26 @@ class SiteManagerDialog:
             del self.custom_sites[sel[0]]
             self._update_custom_list()
             
+    def _config_site(self, site_key: str, site_name: str):
+        """打开单个网站的独立配置对话框"""
+        self.dialog.grab_release()
+        dialog = SiteConfigDialog(self.dialog, site_key, site_name,
+                                  self.site_configs.get(site_key, {}))
+        self.dialog.wait_window(dialog)
+        self.dialog.grab_set()
+        
+        if dialog.result is not None:
+            if dialog.result:
+                self.site_configs[site_key] = dialog.result
+            else:
+                # 恢复默认（删除配置）
+                self.site_configs.pop(site_key, None)
+            # 更新按钮图标
+            btn = self.config_buttons.get(site_key)
+            if btn:
+                has_cfg = site_key in self.site_configs and self.site_configs[site_key]
+                btn.config(text="🔧" if has_cfg else "⚙️")
+    
     def _on_save(self):
         # 收集启用的内置网站
         new_enabled = []
@@ -1015,7 +1280,8 @@ class SiteManagerDialog:
                 
         self.result = {
             'enabled_sites': new_enabled,
-            'custom_sites': self.custom_sites
+            'custom_sites': self.custom_sites,
+            'site_configs': self.site_configs,
         }
         self.dialog.destroy()
         
@@ -1890,16 +2156,9 @@ class MonitorGUI:
         self.minimize_to_tray = True
         
         # 网站配置 - 默认启用所有内置网站
-        self.enabled_sites = [
-            'chinabidding', 'dlzb', 'chinabiddingcc', 'gdtzb', 'cpeinet', 'espic',
-            'chng', 'powerchina', 'powerchina_bid', 'powerchina_ec', 'powerchina_scm',
-            'powerchina_idx', 'powerchina_nw', 'ceec', 'chdtp', 'chec_gys', 'chinazbcg',
-            'cdt', 'ebidding', 'neep', 'ceic', 'sgcc', 'cecep', 'gdg', 'crpower', 'crc',
-            'longi', 'cgnpc', 'dongfang', 'zjycgzx', 'ctg', 'sdicc', 'csg', 'sgccetp',
-            'powerbeijing', 'ccccltd', 'jchc', 'minmetals', 'sunwoda', 'cnbm', 'hghn',
-            'xcmg', 'xinecai', 'ariba', 'faw'
-        ]
+        self.enabled_sites = get_default_enabled_sites()
         self.custom_sites = []
+        self.site_configs = {}  # 网站独立配置 {site_key: {timeout, retries, ...}}
         
         # 联系人列表 (默认空，需用户配置)
         self.contacts: List[Dict] = []
@@ -2682,11 +2941,13 @@ class MonitorGUI:
     
     def _manage_sites(self):
         """管理网站"""
-        dialog = SiteManagerDialog(self.root, self.enabled_sites, self.custom_sites)
+        dialog = SiteManagerDialog(self.root, self.enabled_sites, self.custom_sites,
+                                   getattr(self, 'site_configs', {}))
         result = dialog.show()
         if result:
             self.enabled_sites = result['enabled_sites']
             self.custom_sites = result['custom_sites']
+            self.site_configs = result.get('site_configs', {})
             self._save_config()
             self.log(f"更新网站配置: 启用 {len(self.enabled_sites)} 个内置, {len(self.custom_sites)} 个自定义")
 
@@ -3396,11 +3657,12 @@ class MonitorGUI:
                     self.wechat_config = config.get('wechat_config', self.wechat_config)
                     self.auto_start_enabled = config.get('auto_start', False)
                     self.minimize_to_tray = config.get('minimize_to_tray', True)
-                    # 默认启用所有内置网站
-                    from monitor_core import get_default_sites
-                    all_site_keys = list(get_default_sites().keys())
-                    self.enabled_sites = config.get('enabled_sites', all_site_keys)
+                    # 加载网站配置（兼容旧格式）
+                    self.enabled_sites = config.get('enabled_sites', get_default_enabled_sites())
                     self.custom_sites = config.get('custom_sites', [])
+                    self.site_configs = config.get('site_configs', {})
+                    # 过滤掉已不存在的网站 key
+                    self.enabled_sites, _ = validate_enabled_sites(self.enabled_sites)
                     # 加载联系人列表
                     self.contacts = config.get('contacts', self.contacts)
                     # 加载 AI 配置（V2 - 多Provider管理模式）
@@ -3585,6 +3847,7 @@ class MonitorGUI:
             'minimize_to_tray': self.minimize_to_tray,
             'enabled_sites': self.enabled_sites,
             'custom_sites': self.custom_sites,
+            'site_configs': getattr(self, 'site_configs', {}),
             'email_enabled': self.email_enabled.get() if hasattr(self, 'email_enabled') else True,
             'sms_enabled': self.sms_enabled.get() if hasattr(self, 'sms_enabled') else True,
             'wechat_enabled': self.wechat_enabled.get() if hasattr(self, 'wechat_enabled') else True,
@@ -3885,6 +4148,7 @@ class MonitorGUI:
             core.config['crawler']['enabled_sites'] = self.enabled_sites
             core.config['crawler']['use_selenium'] = use_selenium  # 使用已获取的值
             core.config['custom_sites'] = self.custom_sites
+            core.config['site_configs'] = getattr(self, 'site_configs', {})
             
             # 重新初始化爬虫（使用新配置）
             self.queue_log(f"[初始化] 正在加载爬虫，Selenium模式={'启用' if use_selenium else '禁用'}...")

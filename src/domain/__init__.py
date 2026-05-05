@@ -16,7 +16,19 @@ from .industry import (
     DEFAULT_SEARCH_KEYWORDS,
 )
 
-from .sites import get_default_sites, get_builtin_crawler_sites
+from .sites import (
+    get_default_sites,
+    get_builtin_crawler_sites,
+    get_sites,
+    get_site_config,
+    get_categories,
+    get_sites_by_category,
+    get_default_enabled_sites,
+    get_all_site_keys,
+    validate_enabled_sites,
+    SITE_CATEGORIES,
+    SITES,
+)
 from .prompts import get_ai_system_prompt
 
 __all__ = [
@@ -30,5 +42,14 @@ __all__ = [
     "DEFAULT_SEARCH_KEYWORDS",
     "get_default_sites",
     "get_builtin_crawler_sites",
+    "get_sites",
+    "get_site_config",
+    "get_categories",
+    "get_sites_by_category",
+    "get_default_enabled_sites",
+    "get_all_site_keys",
+    "validate_enabled_sites",
+    "SITE_CATEGORIES",
+    "SITES",
     "get_ai_system_prompt",
 ]

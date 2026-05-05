@@ -15,14 +15,14 @@ try:
     from .notifier.email import EmailNotifier
     from .notifier.sms import SMSNotifier
     from .crawler.registry import get_all_crawlers
-    from .domain.sites import get_default_sites
+    from .domain.sites import get_default_sites, get_sites, get_site_config
 except ImportError:
     from database.storage import Storage, BidInfo
     from matcher.keyword import KeywordMatcher
     from notifier.email import EmailNotifier
     from notifier.sms import SMSNotifier
     from crawler.registry import get_all_crawlers
-    from domain.sites import get_default_sites
+    from domain.sites import get_default_sites, get_sites, get_site_config
 
 
 
@@ -131,13 +131,26 @@ class MonitorCore:
         # 获取启用的网站列表
         enabled = crawler_config.get('enabled_sites', [])
         
+        # 获取网站独立配置
+        site_configs = self.config.get('site_configs', {})
+        
+        # 辅助函数：合并全局配置与网站独立配置
+        def merge_site_config(site_key: str) -> Dict[str, Any]:
+            merged = dict(crawler_config)
+            overrides = site_configs.get(site_key, {})
+            for k, v in overrides.items():
+                if v is not None:
+                    merged[k] = v
+            return merged
+        
         # 1. 加载内置爬虫类
         crawler_classes = get_all_crawlers()
         
         for name in enabled:
             if name in crawler_classes:
                 try:
-                    crawler = crawler_classes[name](crawler_config)
+                    cfg = merge_site_config(name)
+                    crawler = crawler_classes[name](cfg)
                     crawlers.append(crawler)
                     self.log(f"[OK] Loaded crawler: {name}")
                 except Exception as e:
@@ -166,11 +179,13 @@ class MonitorCore:
             if key in default_sites and key not in crawler_classes:
                 site = default_sites[key]
                 try:
-                    if use_selenium:
-                        crawler = SeleniumCrawler(crawler_config, site['name'], site['url'], headless=True)
+                    cfg = merge_site_config(key)
+                    site_use_selenium = cfg.get('use_selenium', use_selenium)
+                    if site_use_selenium:
+                        crawler = SeleniumCrawler(cfg, site['name'], site['url'], headless=True)
                         self.log(f"[OK] Loaded site (Selenium): {site['name']}")
                     else:
-                        crawler = CustomCrawler(crawler_config, site['name'], site['url'])
+                        crawler = CustomCrawler(cfg, site['name'], site['url'])
                         self.log(f"[OK] Loaded site: {site['name']}")
                     crawlers.append(crawler)
                 except Exception as e:
@@ -182,12 +197,14 @@ class MonitorCore:
             try:
                 name = site.get('name', 'Unknown')
                 url = site.get('url', '')
+                rules = site.get('rules', None)
                 if name and url:
-                    if use_selenium:
+                    site_use_selenium = site.get('use_selenium', use_selenium)
+                    if site_use_selenium:
                         crawler = SeleniumCrawler(crawler_config, name, url, headless=True)
                         self.log(f"[OK] Loaded custom (Selenium): {name}")
                     else:
-                        crawler = CustomCrawler(crawler_config, name, url)
+                        crawler = CustomCrawler(crawler_config, name, url, rules=rules)
                         self.log(f"[OK] Loaded custom crawler: {name}")
                     crawlers.append(crawler)
             except Exception as e:
