@@ -6,7 +6,7 @@ echo   BidMonitor 一键打包部署脚本 v1.7
 echo ========================================
 echo.
 
-cd /d %~dp0
+cd /d %~dp0..
 
 echo [1/4] 清理旧的打包文件...
 if exist bidmonitor_deploy.zip del bidmonitor_deploy.zip

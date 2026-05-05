@@ -1397,7 +1397,7 @@ class AIConfigManagerDialog(tk.Toplevel):
     def __init__(self, parent, ai_config: Dict[str, Any]):
         super().__init__(parent)
         self.title("🤖 AI Provider 配置管理")
-        self.geometry("700x520")
+        self.geometry("700x620")
         self.resizable(False, False)
         self.transient(parent)
         self.grab_set()
@@ -1405,7 +1405,7 @@ class AIConfigManagerDialog(tk.Toplevel):
         # 居中
         self.update_idletasks()
         x = parent.winfo_x() + (parent.winfo_width() - 700) // 2
-        y = parent.winfo_y() + (parent.winfo_height() - 520) // 2
+        y = parent.winfo_y() + (parent.winfo_height() - 620) // 2
         self.geometry(f"+{x}+{y}")
         
         # 深拷贝当前配置
@@ -1414,6 +1414,7 @@ class AIConfigManagerDialog(tk.Toplevel):
         self.providers: List[Dict[str, Any]] = [dict(p) for p in ai_config.get('providers', [])]
         self.prompt = ai_config.get('prompt', '')
         self.result = None
+        self._modified = False
         
         self._create_widgets()
         self._refresh_list()
@@ -1465,10 +1466,13 @@ class AIConfigManagerDialog(tk.Toplevel):
         # 底部保存
         bottom = ttk.Frame(main)
         bottom.pack(fill=tk.X, pady=10)
-        ttk.Label(bottom, text="💡 双击列表项可编辑，选中后点击「设为当前」即可切换",
-                  foreground="gray", font=("Microsoft YaHei", 9)).pack(side=tk.LEFT)
+        
+        self.status_label = ttk.Label(bottom, text="",
+                                       foreground="#e65100", font=("Microsoft YaHei", 9, "bold"))
+        self.status_label.pack(side=tk.LEFT)
+        
         ttk.Button(bottom, text="💾 保存所有配置", command=self._save).pack(side=tk.RIGHT, padx=5)
-        ttk.Button(bottom, text="取消", command=self.destroy).pack(side=tk.RIGHT, padx=5)
+        ttk.Button(bottom, text="取消", command=self._on_cancel).pack(side=tk.RIGHT, padx=5)
     
     def _refresh_list(self):
         self.provider_listbox.delete(0, tk.END)
@@ -1483,6 +1487,16 @@ class AIConfigManagerDialog(tk.Toplevel):
             self.provider_listbox.insert(tk.END, display)
             if is_active:
                 self.provider_listbox.itemconfig(i, {'fg': '#1976d2', 'bg': '#e3f2fd'})
+    
+    def _update_modified_state(self, modified: bool = True):
+        """更新未保存状态提示"""
+        self._modified = modified
+        if modified:
+            self.status_label.config(text="⚠️ 有未保存的更改")
+            self.title("🤖 AI Provider 配置管理 *")
+        else:
+            self.status_label.config(text="")
+            self.title("🤖 AI Provider 配置管理")
     
     def _get_selected_index(self) -> int:
         sel = self.provider_listbox.curselection()
@@ -1499,6 +1513,7 @@ class AIConfigManagerDialog(tk.Toplevel):
             if len(self.providers) == 1:
                 self.active_id = dialog.result['id']
             self._refresh_list()
+            self._update_modified_state(True)
     
     def _edit_provider(self):
         idx = self._get_selected_index()
@@ -1512,6 +1527,7 @@ class AIConfigManagerDialog(tk.Toplevel):
         if dialog.result:
             self.providers[idx] = dialog.result
             self._refresh_list()
+            self._update_modified_state(True)
     
     def _set_active(self):
         idx = self._get_selected_index()
@@ -1520,6 +1536,7 @@ class AIConfigManagerDialog(tk.Toplevel):
             return
         self.active_id = self.providers[idx].get('id', '')
         self._refresh_list()
+        self._update_modified_state(True)
     
     def _test_latency(self):
         idx = self._get_selected_index()
@@ -1540,7 +1557,8 @@ class AIConfigManagerDialog(tk.Toplevel):
                 p['latency_ms'] = latency
             self.after(0, lambda: (
                 messagebox.showinfo("测速结果", msg),
-                self._refresh_list()
+                self._refresh_list(),
+                self._update_modified_state(True)
             ))
         
         threading.Thread(target=do_test, daemon=True).start()
@@ -1557,6 +1575,7 @@ class AIConfigManagerDialog(tk.Toplevel):
             if self.active_id == deleted_id:
                 self.active_id = self.providers[0].get('id', '') if self.providers else ''
             self._refresh_list()
+            self._update_modified_state(True)
     
     def _save(self):
         self.result = {
@@ -1565,7 +1584,18 @@ class AIConfigManagerDialog(tk.Toplevel):
             'providers': self.providers,
             'prompt': self.prompt_text.get('1.0', tk.END).strip(),
         }
+        self._update_modified_state(False)
         self.destroy()
+    
+    def _on_cancel(self):
+        """取消时检查是否有未保存的更改"""
+        if self._modified:
+            if messagebox.askyesno("确认", "有未保存的更改，确定要放弃吗？"):
+                self.result = None
+                self.destroy()
+        else:
+            self.result = None
+            self.destroy()
 
 
 class ThemeConfigDialog(tk.Toplevel):
