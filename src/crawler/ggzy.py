@@ -5,8 +5,10 @@
 from typing import List, Dict, Any
 from urllib.parse import urljoin
 from .base import BaseCrawler, BidInfo
+from .registry import register_crawler
 
 
+@register_crawler('ggzy')
 class GGZYCrawler(BaseCrawler):
     """全国公共资源交易平台爬虫"""
     

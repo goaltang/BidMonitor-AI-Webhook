@@ -5,8 +5,10 @@
 from typing import List, Dict, Any
 from urllib.parse import urljoin
 from .base import BaseCrawler, BidInfo
+from .registry import register_crawler
 
 
+@register_crawler('chinabidding')
 class ChinaBiddingCrawler(BaseCrawler):
     """中国采购与招标网爬虫"""
     
@@ -46,18 +48,6 @@ class ChinaBiddingCrawler(BaseCrawler):
             try:
                 title = item.get_text(strip=True)
                 if not title or len(title) < 10:
-                    continue
-                
-                # 关键字过滤
-                title_lower = title.lower()
-                keywords_lower = [kw.lower() for kw in self.search_keywords]
-                bid_keywords = ['招标', '中标', '采购', '公告']
-                
-                # 必须包含业务关键字或搜索关键字
-                has_bid_keyword = any(kw in title_lower for kw in bid_keywords)
-                has_search_keyword = any(kw in title_lower for kw in keywords_lower)
-                
-                if not (has_bid_keyword or has_search_keyword):
                     continue
                 
                 url = item.get('href', '')

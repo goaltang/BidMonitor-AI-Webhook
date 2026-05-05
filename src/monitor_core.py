@@ -14,45 +14,17 @@ try:
     from .matcher.keyword import KeywordMatcher
     from .notifier.email import EmailNotifier
     from .notifier.sms import SMSNotifier
-    
-    from .crawler.ccgp import CCGPCrawler
-    from .crawler.chinabidding import ChinaBiddingCrawler
-    from .crawler.ebnew import EbnewCrawler
-    from .crawler.plap import PLAPCrawler
-    from .crawler.ggzy import GGZYCrawler
-    from .crawler.bidcenter import BidcenterCrawler
-    from .crawler.qianlima import QianlimaCrawler
-    from .crawler.chinatender import ChinaTenderCrawler
-    from .crawler.dlnyzb import DlnyzbCrawler
-    
+    from .crawler.registry import get_all_crawlers
     from .domain.sites import get_default_sites
 except ImportError:
     from database.storage import Storage, BidInfo
     from matcher.keyword import KeywordMatcher
     from notifier.email import EmailNotifier
     from notifier.sms import SMSNotifier
-    
-    from crawler.ccgp import CCGPCrawler
-    from crawler.chinabidding import ChinaBiddingCrawler
-    from crawler.ebnew import EbnewCrawler
-    from crawler.plap import PLAPCrawler
-    from crawler.ggzy import GGZYCrawler
-    from crawler.bidcenter import BidcenterCrawler
-    from crawler.qianlima import QianlimaCrawler
-    from crawler.chinatender import ChinaTenderCrawler
-    from crawler.dlnyzb import DlnyzbCrawler
-    
+    from crawler.registry import get_all_crawlers
     from domain.sites import get_default_sites
 
-# 爬虫注册表
-def get_all_crawlers():
-    """获取所有爬虫类"""
-    return {
-        'ccgp': CCGPCrawler,
-        'chinabidding': ChinaBiddingCrawler,
-        'ebnew': EbnewCrawler,
-        'plap': PLAPCrawler,
-    }
+
 
 
 class MonitorCore:

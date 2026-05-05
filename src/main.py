@@ -13,22 +13,10 @@ import yaml
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from database.storage import Storage, BidInfo
-from crawler.ccgp import CCGPCrawler
-from crawler.chinabidding import ChinaBiddingCrawler
-from crawler.ebnew import EbnewCrawler
-from crawler.plap import PLAPCrawler
+from crawler.registry import get_all_crawlers
 from matcher.keyword import KeywordMatcher
 from notifier.email import EmailNotifier
 from scheduler.runner import Scheduler
-
-
-# 爬虫注册表
-CRAWLER_REGISTRY = {
-    'ccgp': CCGPCrawler,
-    'chinabidding': ChinaBiddingCrawler,
-    'ebnew': EbnewCrawler,
-    'plap': PLAPCrawler,
-}
 
 
 def load_config(config_path: str) -> dict:
@@ -76,9 +64,10 @@ class BidMonitor:
         crawler_config = config.get('crawler', {})
         enabled_sites = crawler_config.get('enabled_sites', ['ccgp', 'chinabidding', 'ebnew'])
         
+        crawler_classes = get_all_crawlers()
         for site in enabled_sites:
-            if site in CRAWLER_REGISTRY:
-                crawler_class = CRAWLER_REGISTRY[site]
+            if site in crawler_classes:
+                crawler_class = crawler_classes[site]
                 crawler = crawler_class({
                     **crawler_config,
                     'search_keywords': config['keywords']['include'][:3]  # 使用前3个关键字搜索

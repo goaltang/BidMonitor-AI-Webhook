@@ -6,8 +6,10 @@ import re
 from typing import List, Dict, Any
 from urllib.parse import urljoin, quote
 from .base import BaseCrawler, BidInfo
+from .registry import register_crawler
 
 
+@register_crawler('ccgp')
 class CCGPCrawler(BaseCrawler):
     """中国政府采购网爬虫"""
     
@@ -55,12 +57,6 @@ class CCGPCrawler(BaseCrawler):
                 
                 title = title_elem.get_text(strip=True)
                 if not title or len(title) < 10:
-                    continue
-                
-                # 关键字过滤
-                title_lower = title.lower()
-                keywords_lower = [kw.lower() for kw in self.search_keywords]
-                if not any(kw in title_lower for kw in keywords_lower):
                     continue
                 
                 url = title_elem.get('href', '')

@@ -24,11 +24,14 @@ except Exception as e:
     SELENIUM_AVAILABLE = False
     IMPORT_ERROR_MSG = f"Unexpected error: {str(e)}"
 
-from .base import BidInfo
+from .base import BaseCrawler, BidInfo
 
 
-class SeleniumCrawler:
-    """Selenium浏览器爬虫 - 使用真实Chrome浏览器"""
+class SeleniumCrawler(BaseCrawler):
+    """Selenium浏览器爬虫 - 使用真实Chrome浏览器
+    
+    继承 BaseCrawler，统一接口。内部覆盖 fetch() 使用 Selenium 替代 requests。
+    """
     
     def __init__(self, config: dict, name: str, url: str, headless: bool = True):
         """
@@ -40,13 +43,18 @@ class SeleniumCrawler:
             url: 网站URL
             headless: 是否无头模式（不显示浏览器窗口）
         """
-        self.config = config
+        # 先初始化 BaseCrawler（统一配置、session、重试机制等）
+        super().__init__(config)
+        # Selenium 特有的属性
         self._name = name
         self.url = url
         self.headless = headless
-        self.timeout = config.get('timeout', 30)
         self.logger = logging.getLogger(f"crawler.selenium.{name}")
         self.driver = None
+        # 覆盖 BaseCrawler 的 name 属性
+        self.name = name  # type: ignore
+        # Selenium 不需要 requests 的 session
+        self.session = None  # type: ignore
         
     @property
     def name(self) -> str:

@@ -6,8 +6,10 @@
 from typing import List, Dict, Any
 from urllib.parse import urljoin
 from .base import BaseCrawler, BidInfo
+from .registry import register_crawler
 
 
+@register_crawler('ebnew')
 class EbnewCrawler(BaseCrawler):
     """必联网爬虫"""
     
