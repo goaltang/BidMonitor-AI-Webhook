@@ -48,6 +48,22 @@ except ImportError:
         from notifier.voice import VoiceNotifier
         from utils.system import AutoStart, SystemTray, TRAY_AVAILABLE
 
+# AI Provider 预设库
+try:
+    from .ai_providers import (
+        AIProvider, AI_PROVIDER_PRESETS, get_preset_categories,
+        get_preset_by_id, create_provider_from_preset, create_custom_provider,
+        test_provider_latency, build_request_payload, parse_response,
+        find_active_provider, find_provider_by_id,
+    )
+except ImportError:
+    from ai_providers import (
+        AIProvider, AI_PROVIDER_PRESETS, get_preset_categories,
+        get_preset_by_id, create_provider_from_preset, create_custom_provider,
+        test_provider_latency, build_request_payload, parse_response,
+        find_active_provider, find_provider_by_id,
+    )
+
 # 邮箱服务商配置
 EMAIL_PROVIDERS = {
     "QQ邮箱": {"smtp_server": "smtp.qq.com", "smtp_port": 465},
@@ -1143,6 +1159,411 @@ class ContactConfigDialog(tk.Toplevel):
         self.destroy()
 
 
+class AIProviderDialog(tk.Toplevel):
+    """添加/编辑 AI Provider 对话框"""
+    
+    def __init__(self, parent, provider_data: Dict[str, Any] = None, edit_mode: bool = False):
+        super().__init__(parent)
+        self.result = None
+        self.edit_mode = edit_mode
+        self.provider_data = provider_data or {}
+        
+        self.title("编辑 Provider" if edit_mode else "添加 Provider")
+        self.geometry("560x520")
+        self.resizable(False, False)
+        self.transient(parent)
+        self.grab_set()
+        
+        # 居中显示
+        self.update_idletasks()
+        x = parent.winfo_x() + (parent.winfo_width() - 560) // 2
+        y = parent.winfo_y() + (parent.winfo_height() - 520) // 2
+        self.geometry(f"+{x}+{y}")
+        
+        self._create_widgets()
+        self._load_data()
+    
+    def _create_widgets(self):
+        main = ttk.Frame(self, padding="15")
+        main.pack(fill=tk.BOTH, expand=True)
+        
+        # === 选择预设 or 自定义 ===
+        mode_frame = ttk.LabelFrame(main, text="Provider 类型", padding=10)
+        mode_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        self.mode_var = tk.StringVar(value="preset")
+        ttk.Radiobutton(mode_frame, text="从预设选择", variable=self.mode_var,
+                        value="preset", command=self._on_mode_change).pack(side=tk.LEFT, padx=10)
+        ttk.Radiobutton(mode_frame, text="自定义配置", variable=self.mode_var,
+                        value="custom", command=self._on_mode_change).pack(side=tk.LEFT, padx=10)
+        
+        # === 预设选择区域 ===
+        self.preset_frame = ttk.LabelFrame(main, text="选择预设", padding=10)
+        self.preset_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Label(self.preset_frame, text="类别:").grid(row=0, column=0, sticky=tk.W)
+        self.category_var = tk.StringVar()
+        self.categories = get_preset_categories()
+        category_names = list(self.categories.keys())
+        self.category_combo = ttk.Combobox(self.preset_frame, textvariable=self.category_var,
+                                           values=category_names, state="readonly", width=20)
+        self.category_combo.grid(row=0, column=1, sticky=tk.W, padx=5)
+        self.category_combo.bind("<<ComboboxSelected>>", self._on_category_change)
+        
+        ttk.Label(self.preset_frame, text="Provider:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        self.preset_var = tk.StringVar()
+        self.preset_combo = ttk.Combobox(self.preset_frame, textvariable=self.preset_var,
+                                         values=[], state="readonly", width=35)
+        self.preset_combo.grid(row=1, column=1, sticky=tk.W, padx=5, pady=5)
+        self.preset_combo.bind("<<ComboboxSelected>>", self._on_preset_change)
+        
+        # === 自定义/详情配置区域 ===
+        self.detail_frame = ttk.LabelFrame(main, text="配置详情", padding=10)
+        self.detail_frame.pack(fill=tk.X, pady=5)
+        
+        # 名称
+        ttk.Label(self.detail_frame, text="显示名称:").grid(row=0, column=0, sticky=tk.W)
+        self.name_var = tk.StringVar()
+        ttk.Entry(self.detail_frame, textvariable=self.name_var, width=40).grid(row=0, column=1, sticky=tk.W, padx=5)
+        
+        # API地址
+        ttk.Label(self.detail_frame, text="API URL:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        self.url_var = tk.StringVar()
+        ttk.Entry(self.detail_frame, textvariable=self.url_var, width=50).grid(row=1, column=1, sticky=tk.W, padx=5)
+        
+        # API Key
+        ttk.Label(self.detail_frame, text="API Key:").grid(row=2, column=0, sticky=tk.W)
+        self.key_var = tk.StringVar()
+        ttk.Entry(self.detail_frame, textvariable=self.key_var, width=50, show="*").grid(row=2, column=1, sticky=tk.W, padx=5)
+        
+        # 模型
+        ttk.Label(self.detail_frame, text="模型:").grid(row=3, column=0, sticky=tk.W, pady=5)
+        self.model_var = tk.StringVar()
+        self.model_combo = ttk.Combobox(self.detail_frame, textvariable=self.model_var,
+                                        values=[], width=35)
+        self.model_combo.grid(row=3, column=1, sticky=tk.W, padx=5)
+        
+        # 备注
+        ttk.Label(self.detail_frame, text="备注:").grid(row=4, column=0, sticky=tk.W)
+        self.notes_var = tk.StringVar()
+        ttk.Entry(self.detail_frame, textvariable=self.notes_var, width=50).grid(row=4, column=1, sticky=tk.W, padx=5)
+        
+        # === 提示 ===
+        hint = ttk.Label(main, text="🔒 API Key 将保存到 .env 文件（Git忽略）。选择预设会自动填充URL和模型列表。",
+                         foreground="gray", font=("Microsoft YaHei", 8), wraplength=520)
+        hint.pack(anchor=tk.W, pady=(5, 0))
+        
+        # === 按钮 ===
+        btn_frame = ttk.Frame(main)
+        btn_frame.pack(fill=tk.X, pady=15)
+        
+        ttk.Button(btn_frame, text="💾 保存", command=self._on_save).pack(side=tk.RIGHT, padx=5)
+        ttk.Button(btn_frame, text="🧪 测试连接", command=self._test).pack(side=tk.RIGHT, padx=5)
+        ttk.Button(btn_frame, text="取消", command=self.destroy).pack(side=tk.RIGHT, padx=5)
+        
+        # 初始化类别
+        if category_names:
+            self.category_var.set(category_names[0])
+            self._on_category_change(None)
+    
+    def _on_mode_change(self):
+        if self.mode_var.get() == "preset":
+            self.preset_frame.grid()
+        else:
+            self.preset_frame.grid_remove()
+    
+    def _on_category_change(self, event):
+        cat = self.category_var.get()
+        preset_ids = self.categories.get(cat, [])
+        preset_names = []
+        self._preset_id_map = {}
+        for pid in preset_ids:
+            preset = get_preset_by_id(pid)
+            if preset:
+                name = preset.get("name", pid)
+                preset_names.append(name)
+                self._preset_id_map[name] = pid
+        self.preset_combo['values'] = preset_names
+        if preset_names:
+            self.preset_var.set(preset_names[0])
+            self._on_preset_change(None)
+    
+    def _on_preset_change(self, event):
+        name = self.preset_var.get()
+        pid = self._preset_id_map.get(name)
+        if not pid:
+            return
+        preset = get_preset_by_id(pid)
+        if not preset:
+            return
+        # 自动填充
+        self.name_var.set(preset["name"])
+        self.url_var.set(preset["base_url"])
+        self.model_combo['values'] = list(preset["models"])
+        self.model_var.set(preset["default_model"])
+        self._current_preset_id = pid
+    
+    def _load_data(self):
+        """编辑模式时加载已有数据"""
+        if not self.provider_data:
+            return
+        
+        ptype = self.provider_data.get('provider_type', 'preset')
+        self.mode_var.set(ptype)
+        self._on_mode_change()
+        
+        self.name_var.set(self.provider_data.get('name', ''))
+        self.url_var.set(self.provider_data.get('base_url', ''))
+        self.key_var.set(self.provider_data.get('api_key', ''))
+        self.model_var.set(self.provider_data.get('model', ''))
+        self.notes_var.set(self.provider_data.get('notes', ''))
+        self.model_combo['values'] = self.provider_data.get('models', [])
+        
+        if ptype == 'preset':
+            preset_id = self.provider_data.get('preset_id', '')
+            self._current_preset_id = preset_id
+            # 尝试选中对应的类别和预设
+            preset = get_preset_by_id(preset_id)
+            if preset:
+                for cat, ids in self.categories.items():
+                    if preset_id in ids:
+                        self.category_var.set(cat)
+                        self._on_category_change(None)
+                        # 选中对应的预设名称
+                        for name, pid in self._preset_id_map.items():
+                            if pid == preset_id:
+                                self.preset_var.set(name)
+                                break
+                        break
+    
+    def _get_result(self) -> Dict[str, Any]:
+        """收集表单数据"""
+        mode = self.mode_var.get()
+        preset_id = getattr(self, '_current_preset_id', '')
+        
+        result = {
+            'id': self.provider_data.get('id', '') or f"provider_{os.urandom(4).hex()}",
+            'name': self.name_var.get().strip() or '未命名',
+            'provider_type': mode,
+            'preset_id': preset_id if mode == 'preset' else '',
+            'base_url': self.url_var.get().strip(),
+            'api_key': self.key_var.get().strip(),
+            'model': self.model_var.get().strip(),
+            'models': list(self.model_combo['values']),
+            'notes': self.notes_var.get().strip(),
+            'enabled': self.provider_data.get('enabled', True),
+            'latency_ms': self.provider_data.get('latency_ms', 0),
+        }
+        return result
+    
+    def _test(self):
+        data = self._get_result()
+        if not data['api_key']:
+            messagebox.showwarning("提示", "请先输入 API Key")
+            return
+        if not data['base_url']:
+            messagebox.showwarning("提示", "请先输入 API URL")
+            return
+        
+        provider = AIProvider(**data)
+        
+        def do_test():
+            success, latency, msg = test_provider_latency(provider, timeout=30)
+            self.after(0, lambda: messagebox.showinfo(
+                "测试结果",
+                f"{'✅ 成功' if success else '❌ 失败'}\n\n{msg}"
+            ))
+        
+        threading.Thread(target=do_test, daemon=True).start()
+    
+    def _on_save(self):
+        name = self.name_var.get().strip()
+        url = self.url_var.get().strip()
+        
+        if not name:
+            messagebox.showerror("错误", "请输入显示名称")
+            return
+        if not url:
+            messagebox.showerror("错误", "请输入 API URL")
+            return
+        
+        self.result = self._get_result()
+        self.destroy()
+
+
+class AIConfigManagerDialog(tk.Toplevel):
+    """AI Provider 配置管理主对话框（类似 CC Switch）"""
+    
+    def __init__(self, parent, ai_config: Dict[str, Any]):
+        super().__init__(parent)
+        self.title("🤖 AI Provider 配置管理")
+        self.geometry("700x520")
+        self.resizable(False, False)
+        self.transient(parent)
+        self.grab_set()
+        
+        # 居中
+        self.update_idletasks()
+        x = parent.winfo_x() + (parent.winfo_width() - 700) // 2
+        y = parent.winfo_y() + (parent.winfo_height() - 520) // 2
+        self.geometry(f"+{x}+{y}")
+        
+        # 深拷贝当前配置
+        self.ai_enable = ai_config.get('enable', False)
+        self.active_id = ai_config.get('active_provider_id', '')
+        self.providers: List[Dict[str, Any]] = [dict(p) for p in ai_config.get('providers', [])]
+        self.prompt = ai_config.get('prompt', '')
+        self.result = None
+        
+        self._create_widgets()
+        self._refresh_list()
+    
+    def _create_widgets(self):
+        main = ttk.Frame(self, padding="15")
+        main.pack(fill=tk.BOTH, expand=True)
+        
+        # 顶部：启用开关 + 添加按钮
+        top = ttk.Frame(main)
+        top.pack(fill=tk.X, pady=(0, 10))
+        
+        self.enable_var = tk.BooleanVar(value=self.ai_enable)
+        ttk.Checkbutton(top, text="启用 AI 智能过滤", variable=self.enable_var).pack(side=tk.LEFT)
+        
+        ttk.Button(top, text="➕ 添加 Provider", command=self._add_provider).pack(side=tk.RIGHT, padx=5)
+        
+        # 中间：Provider 列表（卡片式 Listbox）
+        list_frame = ttk.LabelFrame(main, text="已配置的 Provider", padding=10)
+        list_frame.pack(fill=tk.BOTH, expand=True, pady=5)
+        
+        self.provider_listbox = tk.Listbox(list_frame, height=10, font=("Consolas", 10))
+        scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.provider_listbox.yview)
+        self.provider_listbox.config(yscrollcommand=scrollbar.set)
+        self.provider_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        self.provider_listbox.bind("<Double-Button-1>", lambda e: self._edit_provider())
+        
+        # 操作按钮
+        btn_row = ttk.Frame(main)
+        btn_row.pack(fill=tk.X, pady=10)
+        
+        ttk.Button(btn_row, text="✏️ 编辑", command=self._edit_provider).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_row, text="🔄 设为当前", command=self._set_active).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_row, text="🧪 测速", command=self._test_latency).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_row, text="❌ 删除", command=self._delete_provider).pack(side=tk.LEFT, padx=5)
+        
+        # 自定义 Prompt
+        prompt_frame = ttk.LabelFrame(main, text="自定义判断标准（留空使用默认）", padding=10)
+        prompt_frame.pack(fill=tk.X, pady=5)
+        
+        self.prompt_text = tk.Text(prompt_frame, height=4, width=70, font=("Microsoft YaHei", 9),
+                                   wrap=tk.WORD, relief=tk.SOLID, borderwidth=1)
+        self.prompt_text.pack(fill=tk.X)
+        if self.prompt:
+            self.prompt_text.insert(tk.END, self.prompt)
+        
+        # 底部保存
+        bottom = ttk.Frame(main)
+        bottom.pack(fill=tk.X, pady=10)
+        ttk.Label(bottom, text="💡 双击列表项可编辑，选中后点击「设为当前」即可切换",
+                  foreground="gray", font=("Microsoft YaHei", 9)).pack(side=tk.LEFT)
+        ttk.Button(bottom, text="💾 保存所有配置", command=self._save).pack(side=tk.RIGHT, padx=5)
+        ttk.Button(bottom, text="取消", command=self.destroy).pack(side=tk.RIGHT, padx=5)
+    
+    def _refresh_list(self):
+        self.provider_listbox.delete(0, tk.END)
+        for i, p in enumerate(self.providers):
+            name = p.get('name', '未命名')
+            model = p.get('model', '')
+            latency = p.get('latency_ms', 0)
+            is_active = p.get('id', '') == self.active_id
+            status = "✅" if is_active else "  "
+            lat_str = f" [{latency}ms]" if latency > 0 else ""
+            display = f"{status} {name}  →  {model}{lat_str}"
+            self.provider_listbox.insert(tk.END, display)
+            if is_active:
+                self.provider_listbox.itemconfig(i, {'fg': '#1976d2', 'bg': '#e3f2fd'})
+    
+    def _get_selected_index(self) -> int:
+        sel = self.provider_listbox.curselection()
+        return sel[0] if sel else -1
+    
+    def _add_provider(self):
+        dialog = AIProviderDialog(self)
+        self.wait_window(dialog)
+        if dialog.result:
+            self.providers.append(dialog.result)
+            # 如果是第一个Provider，自动设为当前
+            if len(self.providers) == 1:
+                self.active_id = dialog.result['id']
+            self._refresh_list()
+    
+    def _edit_provider(self):
+        idx = self._get_selected_index()
+        if idx < 0:
+            messagebox.showwarning("提示", "请先选择一个 Provider")
+            return
+        dialog = AIProviderDialog(self, self.providers[idx], edit_mode=True)
+        self.wait_window(dialog)
+        if dialog.result:
+            self.providers[idx] = dialog.result
+            self._refresh_list()
+    
+    def _set_active(self):
+        idx = self._get_selected_index()
+        if idx < 0:
+            messagebox.showwarning("提示", "请先选择一个 Provider")
+            return
+        self.active_id = self.providers[idx].get('id', '')
+        self._refresh_list()
+    
+    def _test_latency(self):
+        idx = self._get_selected_index()
+        if idx < 0:
+            messagebox.showwarning("提示", "请先选择一个 Provider")
+            return
+        
+        p = self.providers[idx]
+        if not p.get('api_key'):
+            messagebox.showwarning("提示", "该 Provider 未配置 API Key")
+            return
+        
+        provider = AIProvider(**p)
+        
+        def do_test():
+            success, latency, msg = test_provider_latency(provider, timeout=30)
+            if success:
+                p['latency_ms'] = latency
+            self.after(0, lambda: (
+                messagebox.showinfo("测速结果", msg),
+                self._refresh_list()
+            ))
+        
+        threading.Thread(target=do_test, daemon=True).start()
+    
+    def _delete_provider(self):
+        idx = self._get_selected_index()
+        if idx < 0:
+            messagebox.showwarning("提示", "请先选择一个 Provider")
+            return
+        p = self.providers[idx]
+        if messagebox.askyesno("确认", f"确定要删除 Provider「{p.get('name', '')}」吗？"):
+            deleted_id = p.get('id', '')
+            del self.providers[idx]
+            if self.active_id == deleted_id:
+                self.active_id = self.providers[0].get('id', '') if self.providers else ''
+            self._refresh_list()
+    
+    def _save(self):
+        self.result = {
+            'enable': self.enable_var.get(),
+            'active_provider_id': self.active_id,
+            'providers': self.providers,
+            'prompt': self.prompt_text.get('1.0', tk.END).strip(),
+        }
+        self.destroy()
+
+
 class ThemeConfigDialog(tk.Toplevel):
     """主题配置对话框"""
     def __init__(self, parent, current_theme):
@@ -1625,10 +2046,12 @@ class MonitorGUI:
         # 更新 Footer
         if hasattr(self, 'footer_frame'):
             self.footer_frame.config(bg=self.colors['bg'])
+        if hasattr(self, 'status_label'):
             self.status_label.config(bg=self.colors['bg'])
+        if hasattr(self, 'clock_label'):
             self.clock_label.config(bg=self.colors['bg'])
+        if hasattr(self, 'footer_sep'):
             self.footer_sep.config(bg=self.colors['light'])
-            self.author_label.config(bg=self.colors['bg'])
 
     def _create_widgets(self):
         # 创建Canvas和滚动条实现滚动
@@ -1886,87 +2309,41 @@ class MonitorGUI:
         # 主题设置
         ttk.Button(sys_frame, text="🎨 主题设置", command=self._configure_theme).pack(anchor=tk.W, pady=(5, 0))
         
-        # === AI 智能过滤 ===
+        # === AI 智能过滤 (V2 - Provider管理模式) ===
         ai_frame = ttk.LabelFrame(main_frame, text="🤖 AI 智能过滤", padding="15")
         ai_frame.pack(fill=tk.X, pady=10)
         
-        # 预设的 API 配置（URL需包含完整API端点路径）- 开源版本不包含预设密钥
-        self.ai_presets = {
-            "https://api.deepseek.com/chat/completions": {
-                "key": "",  # 请填入您的DeepSeek API Key
-                "models": ["deepseek-chat"],
-                "default_model": "deepseek-chat"
-            },
-            "https://api.openai.com/v1/chat/completions": {
-                "key": "",  # 请填入您的OpenAI API Key
-                "models": ["gpt-4", "gpt-3.5-turbo"],
-                "default_model": "gpt-3.5-turbo"
-            },
-        }
+        # 状态显示行
+        self.ai_status_frame = ttk.Frame(ai_frame)
+        self.ai_status_frame.pack(fill=tk.X, pady=(0, 5))
         
-        # 启用开关 - 开源版本默认关闭（需用户配置API Key后启用）
         self.ai_enable_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(ai_frame, text="启用 AI 智能分析 (二次筛选)", variable=self.ai_enable_var).pack(anchor=tk.W)
+        ttk.Checkbutton(self.ai_status_frame, text="启用 AI 智能分析",
+                        variable=self.ai_enable_var).pack(side=tk.LEFT)
         
-        # URL 行
-        ai_url_row = ttk.Frame(ai_frame)
-        ai_url_row.pack(fill=tk.X, pady=(5, 0))
+        # 当前Provider显示
+        self.ai_current_label = ttk.Label(self.ai_status_frame, text="未配置",
+                                          foreground="gray", font=("Microsoft YaHei", 9))
+        self.ai_current_label.pack(side=tk.LEFT, padx=(15, 0))
         
-        ttk.Label(ai_url_row, text="API URL:").pack(side=tk.LEFT)
-        self.ai_url_var = tk.StringVar(value="https://api.deepseek.com/chat/completions")
-        self.ai_url_combo = ttk.Combobox(ai_url_row, textvariable=self.ai_url_var, 
-                                          values=list(self.ai_presets.keys()), width=35)
-        self.ai_url_combo.pack(side=tk.LEFT, padx=5)
-        self.ai_url_combo.bind("<<ComboboxSelected>>", self._on_ai_url_changed)
-        self.ai_url_combo.bind("<FocusOut>", self._on_ai_url_changed)
+        # 管理按钮
+        btn_frame = ttk.Frame(ai_frame)
+        btn_frame.pack(fill=tk.X, pady=5)
         
-        # Key 行
-        ai_key_row = ttk.Frame(ai_frame)
-        ai_key_row.pack(fill=tk.X, pady=(5, 0))
+        ttk.Button(btn_frame, text="⚙️ 管理 Provider 配置",
+                   command=self._open_ai_manager).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="🧪 快速测试当前Provider",
+                   command=self._test_ai_connection).pack(side=tk.LEFT, padx=5)
         
-        ttk.Label(ai_key_row, text="API Key:").pack(side=tk.LEFT)
-        self.ai_key_var = tk.StringVar(value="")  # 开源版本默认空
-        all_keys = [p["key"] for p in self.ai_presets.values()]
-        self.ai_key_combo = ttk.Combobox(ai_key_row, textvariable=self.ai_key_var, 
-                                          values=all_keys, width=50)
-        self.ai_key_combo.pack(side=tk.LEFT, padx=5)
+        # 简要提示
+        ttk.Label(ai_frame,
+                  text="💡 支持 50+ 主流/国产/中转 API 预设，一键切换、测速。点击「管理」添加或切换 Provider。",
+                  foreground="#888", font=("Microsoft YaHei", 8), wraplength=620).pack(anchor=tk.W, pady=(5, 0))
         
-        # 安全提示
-        ai_hint = ttk.Label(ai_frame, text="🔒 API Key 将自动保存到 .env 文件（Git 忽略，不会泄露）", 
-                            foreground="gray", font=("Microsoft YaHei", 8))
-        ai_hint.pack(anchor=tk.W, padx=(0, 0), pady=(2, 0))
-        
-        # 模型行
-        ai_model_row = ttk.Frame(ai_frame)
-        ai_model_row.pack(fill=tk.X, pady=(5, 0))
-        
-        ttk.Label(ai_model_row, text="模型:").pack(side=tk.LEFT)
-        self.ai_model_var = tk.StringVar(value="deepseek-chat")
-        # 收集所有模型
-        all_models = []
-        for p in self.ai_presets.values():
-            all_models.extend(p["models"])
-        self.ai_model_combo = ttk.Combobox(ai_model_row, textvariable=self.ai_model_var, 
-                                            values=list(dict.fromkeys(all_models)), width=40)
-        self.ai_model_combo.pack(side=tk.LEFT, padx=5)
-        
-        tk.Button(ai_model_row, text="🧪 测试连接", command=self._test_ai_connection,
-                  bg="#6366f1", fg="white", relief=tk.GROOVE, padx=10).pack(side=tk.LEFT, padx=15)
-        
-        # 自定义 Prompt 输入框
-        ai_prompt_row = ttk.Frame(ai_frame)
-        ai_prompt_row.pack(fill=tk.X, pady=(8, 0))
-        
-        ttk.Label(ai_prompt_row, text="自定义判断标准:").pack(anchor=tk.W)
-        
-        self.ai_prompt_text = tk.Text(ai_frame, height=6, width=70, font=("Microsoft YaHei", 9),
-                                       wrap=tk.WORD, relief=tk.SOLID, borderwidth=1)
-        self.ai_prompt_text.pack(fill=tk.X, pady=(3, 0))
-        # 文本框留空时使用 ai_guard.py 内置默认提示词
-        
-        # 提示词说明
-        ttk.Label(ai_frame, text="提示: 选择预设API或自由输入。切换URL会自动填充对应的Key和模型。留空则使用默认判断标准。",
-                  foreground="#888").pack(anchor=tk.W, pady=(5, 0))
+        # 初始化内部数据
+        self._ai_providers: List[Dict[str, Any]] = []
+        self._ai_active_id: str = ""
+        self._ai_prompt: str = ""
         
         # === 运行控制 ===
         ctrl_frame = ttk.LabelFrame(main_frame, text="🎮 运行控制", padding="15")
@@ -2992,23 +3369,40 @@ class MonitorGUI:
                     self.custom_sites = config.get('custom_sites', [])
                     # 加载联系人列表
                     self.contacts = config.get('contacts', self.contacts)
-                    # 加载 AI 配置（非敏感字段从 JSON，敏感字段从 .env）
+                    # 加载 AI 配置（V2 - 多Provider管理模式）
                     env_secrets = self._read_env_file()
                     if 'ai' in config:
+                        ai_cfg = config['ai']
                         if hasattr(self, 'ai_enable_var'):
-                            self.ai_enable_var.set(config['ai'].get('enable', False))
-                        if hasattr(self, 'ai_url_var'):
-                            self.ai_url_var.set(config['ai'].get('base_url', 'https://api.deepseek.com'))
-                        if hasattr(self, 'ai_key_var'):
-                            # 优先从 .env 读取 API Key，回退到 JSON
-                            self.ai_key_var.set(env_secrets.get('DEEPSEEK_API_KEY', config['ai'].get('api_key', '')))
-                        if hasattr(self, 'ai_model_var'):
-                            self.ai_model_var.set(config['ai'].get('model', 'deepseek-chat'))
-                        if hasattr(self, 'ai_prompt_text'):
-                            saved_prompt = config['ai'].get('prompt', '')
-                            if saved_prompt:
-                                self.ai_prompt_text.delete('1.0', tk.END)
-                                self.ai_prompt_text.insert(tk.END, saved_prompt)
+                            self.ai_enable_var.set(ai_cfg.get('enable', False))
+                        
+                        # 加载新版多Provider配置
+                        self._ai_providers = ai_cfg.get('providers', [])
+                        self._ai_active_id = ai_cfg.get('active_provider_id', '')
+                        self._ai_prompt = ai_cfg.get('prompt', '')
+                        
+                        # 兼容旧版：如果新版providers为空，但旧版有base_url/api_key/model，自动迁移
+                        if not self._ai_providers:
+                            old_url = ai_cfg.get('base_url', '')
+                            old_key = env_secrets.get('DEEPSEEK_API_KEY', ai_cfg.get('api_key', ''))
+                            old_model = ai_cfg.get('model', 'deepseek-chat')
+                            if old_url or old_key:
+                                self._ai_providers = [{
+                                    'id': 'legacy_migrated',
+                                    'name': '已迁移配置',
+                                    'provider_type': 'custom',
+                                    'preset_id': '',
+                                    'base_url': old_url,
+                                    'api_key': old_key,
+                                    'model': old_model or 'deepseek-chat',
+                                    'models': [old_model] if old_model else ['deepseek-chat'],
+                                    'notes': '从旧版配置自动迁移',
+                                    'enabled': True,
+                                    'latency_ms': 0,
+                                }]
+                                self._ai_active_id = 'legacy_migrated'
+                        
+                        self._update_ai_status_label()
                     # 加载Selenium设置（只有在Selenium可用时才根据配置启用）
                     if hasattr(self, 'use_selenium_var'):
                         saved_selenium = config.get('use_selenium', True)
@@ -3092,8 +3486,16 @@ class MonitorGUI:
     def _save_config(self):
         # 先把敏感字段提取到 .env（安全存储）
         env_updates = {}
-        if hasattr(self, 'ai_key_var'):
-            env_updates['DEEPSEEK_API_KEY'] = self.ai_key_var.get()
+        
+        # 收集所有 AI Provider 的 API Key（优先使用第一个活跃Provider的key作为DEEPSEEK_API_KEY兼容）
+        active_key = ""
+        for p in getattr(self, '_ai_providers', []):
+            key = p.get('api_key', '')
+            if key:
+                env_updates['DEEPSEEK_API_KEY'] = key  # 兼容旧版环境变量名
+                active_key = key
+                break
+        
         # 从 email_configs 中提取第一个邮箱的密码
         if self.email_configs and len(self.email_configs) > 0:
             first_email = self.email_configs[0]
@@ -3106,6 +3508,13 @@ class MonitorGUI:
             env_updates['VOICE_ACCESS_KEY_SECRET'] = self.voice_config['access_key_secret']
         if env_updates:
             self._write_env_file(env_updates)
+
+        # 非敏感配置写入 JSON（Provider列表中的api_key留空，已从.env读取）
+        providers_safe = []
+        for p in getattr(self, '_ai_providers', []):
+            p_copy = dict(p)
+            p_copy['api_key'] = ''  # 敏感字段不存JSON
+            providers_safe.append(p_copy)
 
         # 非敏感配置写入 JSON
         config = {
@@ -3130,10 +3539,13 @@ class MonitorGUI:
             'theme': self.theme_config,
             'ai': {
                 'enable': self.ai_enable_var.get() if hasattr(self, 'ai_enable_var') else False,
-                'base_url': self.ai_url_var.get() if hasattr(self, 'ai_url_var') else 'https://cc.honoursoft.cn/',
-                'api_key': '',  # 敏感字段已移到 .env
-                'model': self.ai_model_var.get().strip() if hasattr(self, 'ai_model_var') else 'claude-sonnet-4-5-20250929-thinking',
-                'prompt': self.ai_prompt_text.get('1.0', tk.END).strip() if hasattr(self, 'ai_prompt_text') else '',
+                'active_provider_id': getattr(self, '_ai_active_id', ''),
+                'providers': providers_safe,
+                'prompt': getattr(self, '_ai_prompt', ''),
+                # 兼容旧版字段（用于降级回旧版本时）
+                'base_url': '',
+                'api_key': '',
+                'model': '',
             },
         }
         try:
@@ -3142,60 +3554,105 @@ class MonitorGUI:
         except Exception as e:
             self.log(f"保存配置失败: {e}")
 
-    def _on_ai_url_changed(self, event=None):
-        """当 AI URL 变更时，自动填充对应的 Key 和 Model"""
-        url = self.ai_url_var.get().strip()
+    def _update_ai_status_label(self):
+        """更新主界面AI状态标签"""
+        if not hasattr(self, 'ai_current_label'):
+            return
         
-        # 检查是否是预设的 URL
-        if url in self.ai_presets:
-            preset = self.ai_presets[url]
-            # 自动填充 API Key
-            self.ai_key_var.set(preset["key"])
-            # 自动填充默认模型
-            self.ai_model_var.set(preset["default_model"])
-            # 更新模型下拉列表为该 URL 支持的模型
-            self.ai_model_combo['values'] = preset["models"]
-            self.log(f"🔗 已切换到 {url.split('//')[1].split('/')[0]} API")
+        if not self._ai_providers:
+            self.ai_current_label.config(text="未配置 Provider", foreground="gray")
+            return
+        
+        active = None
+        for p in self._ai_providers:
+            if p.get('id') == self._ai_active_id:
+                active = p
+                break
+        if not active:
+            active = self._ai_providers[0]
+        
+        name = active.get('name', '未命名')
+        model = active.get('model', '')
+        latency = active.get('latency_ms', 0)
+        lat_str = f" [{latency}ms]" if latency > 0 else ""
+        self.ai_current_label.config(
+            text=f"当前: {name} → {model}{lat_str}",
+            foreground="#1976d2"
+        )
+
+    def _open_ai_manager(self):
+        """打开 AI Provider 配置管理器"""
+        ai_config = {
+            'enable': self.ai_enable_var.get() if hasattr(self, 'ai_enable_var') else False,
+            'active_provider_id': self._ai_active_id,
+            'providers': self._ai_providers,
+            'prompt': self._ai_prompt,
+        }
+        dialog = AIConfigManagerDialog(self.root, ai_config)
+        self.root.wait_window(dialog)
+        
+        if dialog.result is not None:
+            # 应用返回的配置
+            self.ai_enable_var.set(dialog.result['enable'])
+            self._ai_active_id = dialog.result['active_provider_id']
+            self._ai_providers = dialog.result['providers']
+            self._ai_prompt = dialog.result['prompt']
+            self._update_ai_status_label()
+            self.log(f"🤖 AI配置已更新，{len(self._ai_providers)} 个 Provider，当前激活: {self._ai_active_id or '无'}")
+            
+            # 立即保存配置（包含新Provider的Key需要写入.env）
+            self._save_config()
 
     def _test_ai_connection(self):
-        """测试 AI API 连接"""
-        key = self.ai_key_var.get().strip()
-        url = self.ai_url_var.get().strip()
-        # 获取模型名称
-        model = self.ai_model_var.get().strip()
+        """测试当前激活的 AI Provider 连接"""
+        if not self._ai_providers:
+            messagebox.showwarning("提示", "请先配置 Provider（点击「管理 Provider 配置」）")
+            return
+        
+        # 找到当前激活的Provider
+        active = None
+        for p in self._ai_providers:
+            if p.get('id') == self._ai_active_id:
+                active = p
+                break
+        if not active:
+            active = self._ai_providers[0]
+        
+        key = active.get('api_key', '')
+        url = active.get('base_url', '')
+        model = active.get('model', '')
+        name = active.get('name', '未命名')
         
         if not key:
-            messagebox.showwarning("提示", "请先输入 API Key")
+            messagebox.showwarning("提示", f"Provider「{name}」未配置 API Key")
             return
-            
-        self.log(f"🧪 正在测试 AI 连接 ({url})...")
+        
+        self.log(f"🧪 正在测试 AI Provider「{name}」({url})...")
         
         def run_test():
             try:
                 from ai_guard import AIGuard
-                prompt = self.ai_prompt_text.get('1.0', tk.END).strip() if hasattr(self, 'ai_prompt_text') else ''
                 guard = AIGuard({
                     'api_key': key,
                     'base_url': url,
                     'model': model,
                     'enable': True,
-                    'prompt': prompt
+                    'prompt': self._ai_prompt,
                 })
                 is_rel, reason = guard.check_relevance(
-                    "某市变电站10kV高低压开关柜设备采购及安装项目", 
+                    "某市变电站10kV高低压开关柜设备采购及安装项目",
                     "本项目采购高低压成套开关柜设备，包括高压环网柜、低压配电柜、箱式变电站等，用于新建变电站配电系统...",
-                    raise_on_error=True  # 测试时需要捕获真实错误
+                    raise_on_error=True
                 )
                 self.root.after(0, lambda: messagebox.showinfo(
-                    "测试成功", 
-                    f"✅ 连接成功！\n\nAI分析结果:\n判断: {'相关' if is_rel else '不相关'}\n理由: {reason}"
+                    "测试成功",
+                    f"✅ Provider「{name}」连接成功！\n\nAI分析结果:\n判断: {'相关' if is_rel else '不相关'}\n理由: {reason}"
                 ))
-                self.log("✅ AI 连接测试通过")
+                self.log(f"✅ AI Provider「{name}」测试通过")
             except Exception as e:
-                self.root.after(0, lambda: messagebox.showerror("测试失败", f"❌ 连接失败:\n{str(e)}"))
-                self.log(f"❌ AI 连接失败: {str(e)}")
-                
-        import threading
+                self.root.after(0, lambda: messagebox.showerror("测试失败", f"❌ Provider「{name}」连接失败:\n{str(e)}"))
+                self.log(f"❌ AI Provider「{name}」测试失败: {str(e)}")
+        
         threading.Thread(target=run_test, daemon=True).start()
 
     def _validate_input(self) -> bool:
@@ -3326,16 +3783,30 @@ class MonitorGUI:
             use_selenium = self.use_selenium_var.get()
             self.queue_log(f"[配置] Selenium模式: {'✅ 启用' if use_selenium else '❌ 禁用'}")
             
-            # 获取 AI 配置
+            # 获取 AI 配置（V2 - 多Provider模式）
             ai_config = None
             if hasattr(self, 'ai_enable_var') and self.ai_enable_var.get():
+                # 从 .env 重新读取 API Key（因为保存时清空了JSON中的key）
+                env_secrets = self._read_env_file()
+                providers_with_key = []
+                for p in self._ai_providers:
+                    p_copy = dict(p)
+                    if not p_copy.get('api_key'):
+                        p_copy['api_key'] = env_secrets.get('DEEPSEEK_API_KEY', '')
+                    providers_with_key.append(p_copy)
+                
                 ai_config = {
                     'enable': True,
-                    'base_url': self.ai_url_var.get().strip(),
-                    'api_key': self.ai_key_var.get().strip(),
-                    'model': self.ai_model_var.get().strip(),
+                    'active_provider_id': self._ai_active_id,
+                    'providers': providers_with_key,
+                    'prompt': self._ai_prompt,
                 }
-                self.queue_log(f"[配置] AI智能过滤: ✅ 启用")
+                active_name = '未知'
+                for p in providers_with_key:
+                    if p.get('id') == self._ai_active_id:
+                        active_name = p.get('name', '未知')
+                        break
+                self.queue_log(f"[配置] AI智能过滤: ✅ 启用 (Provider: {active_name})")
             
             core = MonitorCore(
                 keywords=keywords,

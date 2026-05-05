@@ -6,6 +6,21 @@ try:
 except ImportError:
     from domain.prompts import get_ai_system_prompt
 
+try:
+    from .ai_providers import (
+        AIProvider,
+        build_request_payload,
+        parse_response,
+        find_active_provider,
+    )
+except ImportError:
+    from ai_providers import (
+        AIProvider,
+        build_request_payload,
+        parse_response,
+        find_active_provider,
+    )
+
 
 class AIGuard:
     def __init__(self, config=None, log_callback=None):
@@ -27,11 +42,58 @@ class AIGuard:
         # 优先从环境变量读取 API Key（安全性更高）
         import os
         env_key = os.environ.get('DEEPSEEK_API_KEY', '')
-        self.api_key = env_key or config.get('api_key', '')
-        self.base_url = config.get('base_url', 'https://cc.honoursoft.cn/').rstrip('/')
-        self.model = config.get('model', 'claude-sonnet-4-5-20250929-thinking')
+        
         self.enabled = config.get('enable', False)
         self.custom_prompt = config.get('prompt', '')
+        self.timeout = config.get('timeout', 120)
+        self.max_tokens = config.get('max_tokens', 300)
+        self.temperature = config.get('temperature', 0.1)
+        
+        # ---- 解析当前使用的 Provider ----
+        # 新版：多Provider配置模式
+        providers_data = config.get('providers', [])
+        active_id = config.get('active_provider_id', '')
+        
+        self.provider: AIProvider | None = None
+        
+        if providers_data:
+            providers = [AIProvider(**p) if isinstance(p, dict) else p for p in providers_data]
+            active = find_active_provider(providers, active_id)
+            if active:
+                self.provider = active
+        
+        # 回退到旧版单一配置
+        if self.provider is None:
+            old_key = env_key or config.get('api_key', '')
+            old_url = config.get('base_url', 'https://api.deepseek.com/chat/completions').rstrip('/')
+            old_model = config.get('model', 'deepseek-chat')
+            if old_url or old_key:
+                self.provider = AIProvider(
+                    id="legacy",
+                    name="Legacy",
+                    provider_type="custom",
+                    base_url=old_url,
+                    api_key=old_key,
+                    model=old_model,
+                    models=[old_model],
+                    enabled=True,
+                )
+        
+        # 如果环境变量有 key，覆盖 provider 的 key
+        if env_key and self.provider:
+            self.provider.api_key = env_key
+
+    @property
+    def api_key(self) -> str:
+        return self.provider.api_key if self.provider else ""
+    
+    @property
+    def base_url(self) -> str:
+        return self.provider.base_url.rstrip('/') if self.provider else ""
+    
+    @property
+    def model(self) -> str:
+        return self.provider.model if self.provider else ""
 
     def check_relevance(self, title, content="", raise_on_error=False):
         """
@@ -41,50 +103,35 @@ class AIGuard:
         if not self.enabled:
             return True, "AI未启用"
 
-        if not self.api_key:
+        if not self.provider:
+            return True, "AI未配置Provider"
+        
+        if not self.provider.api_key:
             return True, "AI未配置Key"
+        
+        if not self.provider.base_url:
+            return True, "AI未配置API地址"
 
         self.log(f"🤖 [AI分析] 开始分析: {title[:40]}...")
 
         system_prompt = get_ai_system_prompt(self.custom_prompt)
-
         user_content = f"项目标题: {title}\n项目内容: {content[:800]}"
 
-        # 判断是否使用 Claude 原生格式（基于模型名称和URL）
-        is_claude_native = (
-            'claude' in self.model.lower() and 
-            'honoursoft' in self.base_url.lower()
+        # 使用 ai_providers 的统一 payload 构建
+        payload = build_request_payload(
+            self.provider,
+            system_prompt=system_prompt,
+            user_content=user_content,
+            max_tokens=self.max_tokens,
+            temperature=self.temperature,
         )
-        
-        # 构造请求payload（自动兼容 Claude 和 OpenAI/DeepSeek 格式）
-        if is_claude_native:
-            # Claude 原生格式：system 作为顶级参数
-            payload = {
-                "model": self.model,
-                "system": system_prompt,
-                "messages": [
-                    {"role": "user", "content": user_content}
-                ],
-                "temperature": 0.1,
-                "max_tokens": 300
-            }
-        else:
-            # OpenAI/DeepSeek 兼容格式：system 在 messages 数组中
-            payload = {
-                "model": self.model,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_content}
-                ],
-                "temperature": 0.1,
-                "max_tokens": 300
-            }
 
         # 直接使用用户提供的URL，不添加任何后缀
-        url = self.base_url.rstrip('/')
+        url = self.provider.base_url.rstrip('/')
 
-        self.log(f"🔗 [AI分析] 请求API: {self.base_url}")
-        self.log(f"📦 [AI分析] 使用模型: {self.model}")
+        self.log(f"🔗 [AI分析] 请求API: {self.provider.base_url}")
+        self.log(f"📦 [AI分析] 使用模型: {self.provider.model}")
+        self.log(f"🏷️  [AI分析] Provider: {self.provider.name}")
 
         try:
             import requests
@@ -92,7 +139,7 @@ class AIGuard:
             
             headers = {
                 "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.api_key}"
+                "Authorization": f"Bearer {self.provider.api_key}"
             }
             
             max_retries = 3
@@ -101,7 +148,7 @@ class AIGuard:
             for attempt in range(max_retries):
                 try:
                     self.log(f"⏳ [AI分析] 正在等待AI响应...")
-                    resp = requests.post(url, headers=headers, json=payload, timeout=120)
+                    resp = requests.post(url, headers=headers, json=payload, timeout=self.timeout)
                     
                     if resp.status_code != 200:
                         error_detail = resp.text[:200]
@@ -109,7 +156,7 @@ class AIGuard:
                         raise Exception(f"HTTP {resp.status_code}: {error_detail}")
                     
                     result = resp.json()
-                    ai_content = result['choices'][0]['message']['content']
+                    ai_content = parse_response(self.provider, result)
                     
                     self.log(f"✅ [AI分析] 收到AI响应")
                     

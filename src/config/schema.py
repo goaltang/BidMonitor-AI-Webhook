@@ -51,13 +51,34 @@ class WeChatConfig(BaseModel):
     token: str = Field(default="")
 
 
-class AIConfig(BaseModel):
-    """AI 过滤配置"""
-    enable: bool = Field(default=False)
-    base_url: str = Field(default="https://api.deepseek.com/chat/completions")
+class AIProviderConfig(BaseModel):
+    """AI Provider 配置（单条）"""
+    id: str = Field(default="")
+    name: str = Field(default="")
+    provider_type: str = Field(default="preset", description="preset 或 custom")
+    preset_id: str = Field(default="")
+    base_url: str = Field(default="")
     api_key: str = Field(default="")
-    model: str = Field(default="deepseek-chat")
+    model: str = Field(default="")
+    models: List[str] = Field(default_factory=list)
+    notes: str = Field(default="")
+    enabled: bool = Field(default=True)
+    latency_ms: int = Field(default=0)
+
+
+class AIConfig(BaseModel):
+    """AI 过滤配置（V2 - 支持多 Provider 管理）"""
+    enable: bool = Field(default=False)
+    active_provider_id: str = Field(default="", description="当前激活的 Provider ID")
+    providers: List[AIProviderConfig] = Field(default_factory=list, description="已配置的 Provider 列表")
     prompt: str = Field(default="", description="自定义AI系统提示词")
+    timeout: int = Field(default=120)
+    max_tokens: int = Field(default=300)
+    temperature: float = Field(default=0.1)
+    # ---- 向后兼容旧字段 ----
+    base_url: str = Field(default="https://api.deepseek.com/chat/completions", description="[兼容旧版] 单一API地址")
+    api_key: str = Field(default="", description="[兼容旧版] 单一API Key")
+    model: str = Field(default="deepseek-chat", description="[兼容旧版] 单一模型名称")
 
 
 class ScheduleConfig(BaseModel):
@@ -148,10 +169,31 @@ class AppConfig(BaseModel):
         if "wechat" in data:
             kwargs["wechat"] = WeChatConfig(**data["wechat"])
         
-        # AI 配置（兼容 ai_config 和 ai 两种 key）
+        # AI 配置（兼容 ai_config 和 ai 两种 key，以及旧版单一配置迁移到多Provider）
         ai_data = data.get("ai") or data.get("ai_config", {})
         if ai_data:
-            kwargs["ai"] = AIConfig(**ai_data)
+            ai_cfg = AIConfig(**ai_data)
+            # ---- 旧版配置自动迁移到多Provider模式 ----
+            # 如果新版 providers 为空，但旧版有 base_url/api_key/model，则自动创建一个自定义Provider
+            if not ai_cfg.providers:
+                old_url = ai_data.get("base_url", "")
+                old_key = ai_data.get("api_key", "")
+                old_model = ai_data.get("model", "")
+                if old_url or old_key or old_model:
+                    ai_cfg.providers = [
+                        AIProviderConfig(
+                            id="legacy_migrated",
+                            name="已迁移配置",
+                            provider_type="custom",
+                            base_url=old_url,
+                            api_key=old_key,
+                            model=old_model or "deepseek-chat",
+                            models=[old_model] if old_model else ["deepseek-chat"],
+                            enabled=True,
+                        )
+                    ]
+                    ai_cfg.active_provider_id = "legacy_migrated"
+            kwargs["ai"] = ai_cfg
         
         # 定时任务（兼容 schedule / scheduler / 顶层 interval）
         schedule_data = data.get("schedule") or data.get("scheduler", {})

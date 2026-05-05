@@ -51,3 +51,13 @@ schedule:
 
 logging:
   level: INFO
+
+# ---- AI 智能过滤配置 (V2 - 多Provider管理模式) ----
+# 从 GUI 的「管理 Provider 配置」界面配置后自动保存
+# 支持 50+ 内置预设：OpenAI、Claude、Gemini、DeepSeek、Kimi、GLM、
+# 通义千问、讯飞星火、文心一言、豆包、OpenRouter、API2D、硅基流动 等
+ai:
+  enable: false
+  active_provider_id: ""
+  providers: []
+  prompt: ""
