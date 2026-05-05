@@ -1,0 +1,45 @@
+# 高低压成套设备招投标监控系统 - 配置文件
+
+keywords:
+  include:
+    - 高低压成套设备
+    - 开关柜
+    - 配电柜
+    - 箱式变电站
+    - 环网柜
+    - KYN28
+    - GGD
+    - GCK
+  exclude:
+    - 设计
+    - 监理
+    - 咨询
+    - 清洗
+    - 运输
+  must_contain: []
+
+crawler:
+  enabled_sites:
+    - ccgp
+    - chinabidding
+    - ebnew
+    - plap
+  use_selenium: false
+  timeout: 30
+  request_delay: 5
+  max_retries: 3
+
+email:
+  smtp_server: smtp.qq.com
+  smtp_port: 465
+  use_ssl: true
+  sender: ""
+  password: ""
+  receiver: ""
+
+schedule:
+  interval_minutes: 30
+  run_immediately: false
+
+logging:
+  level: INFO
