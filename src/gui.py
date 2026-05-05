@@ -1268,9 +1268,9 @@ class AIProviderDialog(tk.Toplevel):
     
     def _on_mode_change(self):
         if self.mode_var.get() == "preset":
-            self.preset_frame.grid()
+            self.preset_frame.pack(fill=tk.X, pady=5)
         else:
-            self.preset_frame.grid_remove()
+            self.preset_frame.pack_forget()
     
     def _on_category_change(self, event):
         cat = self.category_var.get()
