@@ -153,8 +153,10 @@ class AppConfig(BaseModel):
         if ai_data:
             kwargs["ai"] = AIConfig(**ai_data)
         
-        # 定时任务（兼容 schedule 和 scheduler）
+        # 定时任务（兼容 schedule / scheduler / 顶层 interval）
         schedule_data = data.get("schedule") or data.get("scheduler", {})
+        if not schedule_data and "interval" in data:
+            schedule_data = {"interval_minutes": data.get("interval")}
         if schedule_data:
             kwargs["schedule"] = ScheduleConfig(**schedule_data)
         
