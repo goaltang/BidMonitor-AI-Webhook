@@ -23,6 +23,10 @@ SITE_CATEGORIES: Dict[str, str] = {
     "电力行业平台": "行业垂直信息",
     "发电集团": "电厂配电设备需求",
     "工程总包": "项目含配电设备",
+    "央企": "中央直属企业电子采购平台",
+    "建筑企业": "建筑施工企业招标采购平台",
+    "钢铁企业": "钢铁企业采购电商平台",
+    "公共资源平台": "政府公共资源交易服务平台",
 }
 
 
@@ -442,6 +446,86 @@ SITES: Dict[str, Dict[str, Any]] = {
         "name": "华润集团守正电子招标采购平台",
         "url": "https://szecp.crc.com.cn/",
         "category": "工程总包",
+        "crawler_type": "custom",
+        "enabled_by_default": False,
+        "timeout": None,
+        "max_retries": None,
+        "request_delay": None,
+        "headers": None,
+        "use_selenium": None,
+    },
+
+    # === 央企 ===
+    "minmetals": {
+        "name": "中国五矿集团有限公司采购电子商务平台",
+        "url": "https://ec.minmetals.com.cn/",
+        "category": "央企",
+        "crawler_type": "custom",
+        "enabled_by_default": False,
+        "timeout": None,
+        "max_retries": None,
+        "request_delay": None,
+        "headers": None,
+        "use_selenium": None,
+    },
+    "ccccltd": {
+        "name": "中交集团供应链管理信息系统",
+        "url": "http://ec.ccccltd.cn/",
+        "category": "央企",
+        "crawler_type": "custom",
+        "enabled_by_default": False,
+        "timeout": None,
+        "max_retries": None,
+        "request_delay": None,
+        "headers": None,
+        "use_selenium": None,
+    },
+
+    # === 建筑企业 ===
+    "yzw": {
+        "name": "云筑网（中建集团）",
+        "url": "https://mall.yzw.cn/",
+        "category": "建筑企业",
+        "crawler_type": "custom",
+        "enabled_by_default": False,
+        "timeout": None,
+        "max_retries": None,
+        "request_delay": None,
+        "headers": None,
+        "use_selenium": None,
+    },
+
+    # === 钢铁企业 ===
+    "rizhaosteel": {
+        "name": "日钢采购电商平台",
+        "url": "https://ep.rizhaosteel.com/",
+        "category": "钢铁企业",
+        "crawler_type": "custom",
+        "enabled_by_default": False,
+        "timeout": None,
+        "max_retries": None,
+        "request_delay": None,
+        "headers": None,
+        "use_selenium": None,
+    },
+    "obei": {
+        "name": "欧贝商城（宝武集团）",
+        "url": "https://www.obei.com.cn/obei-web-ec/OP/index.html",
+        "category": "钢铁企业",
+        "crawler_type": "custom",
+        "enabled_by_default": False,
+        "timeout": None,
+        "max_retries": None,
+        "request_delay": None,
+        "headers": None,
+        "use_selenium": None,
+    },
+
+    # === 公共资源平台 ===
+    "xaprtc": {
+        "name": "雄安新区公共资源交易服务平台",
+        "url": "https://www.xaprtc.com/",
+        "category": "公共资源平台",
         "crawler_type": "custom",
         "enabled_by_default": False,
         "timeout": None,
