@@ -56,7 +56,12 @@ class BidMonitor:
             exclude_keywords=config.industry.exclude,
             must_contain_keywords=config.industry.must_contain,
         )
-        self.notifier = EmailNotifier(config.email.model_dump())
+        # 从环境变量注入邮箱密码（如果配置了）
+        email_cfg = config.email.model_dump() if config.email else {}
+        env_pwd = os.environ.get('EMAIL_SMTP_PASSWORD', '')
+        if env_pwd:
+            email_cfg['password'] = env_pwd
+        self.notifier = EmailNotifier(email_cfg)
         
         # 初始化爬虫
         self.crawlers = []

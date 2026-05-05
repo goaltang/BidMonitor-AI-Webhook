@@ -2,12 +2,23 @@
 统一配置加载器
 
 支持从 YAML / JSON 加载配置，自动搜索多个路径，合并行业默认值。
+敏感配置（API Key、密码等）优先从环境变量或 .env 文件读取。
 """
 import os
 import json
 from typing import Dict, Any, Optional
 
 from .schema import AppConfig
+
+# 尝试加载 .env 文件（如果存在）
+try:
+    from dotenv import load_dotenv
+    _project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    _env_path = os.path.join(_project_root, '.env')
+    if os.path.exists(_env_path):
+        load_dotenv(_env_path, override=True)
+except ImportError:
+    pass
 
 
 def _load_yaml(path: str) -> Optional[Dict[str, Any]]:

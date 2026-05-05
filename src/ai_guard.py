@@ -23,8 +23,11 @@ class AIGuard:
         if not config:
             self.enabled = False
             return
-            
-        self.api_key = config.get('api_key', '')
+        
+        # 优先从环境变量读取 API Key（安全性更高）
+        import os
+        env_key = os.environ.get('DEEPSEEK_API_KEY', '')
+        self.api_key = env_key or config.get('api_key', '')
         self.base_url = config.get('base_url', 'https://cc.honoursoft.cn/').rstrip('/')
         self.model = config.get('model', 'claude-sonnet-4-5-20250929-thinking')
         self.enabled = config.get('enable', False)

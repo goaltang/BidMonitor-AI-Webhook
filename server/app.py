@@ -96,6 +96,31 @@ def verify_credentials(credentials: HTTPBasicCredentials = Depends(security)):
         )
     return credentials.username
 
+def _inject_env_secrets(config_dict: Dict[str, Any]) -> Dict[str, Any]:
+    """从环境变量注入敏感配置，覆盖文件中的值"""
+    # AI API Key
+    ai_key = os.environ.get('DEEPSEEK_API_KEY')
+    if ai_key and 'ai_config' in config_dict:
+        config_dict['ai_config']['api_key'] = ai_key
+    
+    # 邮箱密码
+    email_pwd = os.environ.get('EMAIL_SMTP_PASSWORD')
+    if email_pwd and 'email' in config_dict:
+        config_dict['email']['password'] = email_pwd
+    
+    # 短信 Secret
+    sms_secret = os.environ.get('SMS_ACCESS_KEY_SECRET')
+    if sms_secret and 'sms_config' in config_dict:
+        config_dict['sms_config']['access_key_secret'] = sms_secret
+    
+    # 语音 Secret
+    voice_secret = os.environ.get('VOICE_ACCESS_KEY_SECRET')
+    if voice_secret and 'voice_config' in config_dict:
+        config_dict['voice_config']['access_key_secret'] = voice_secret
+    
+    return config_dict
+
+
 def _appconfig_to_flat_dict(config: AppConfig) -> Dict[str, Any]:
     """将 AppConfig 转换为 server/app.py 兼容的扁平字典格式"""
     return {
@@ -169,6 +194,8 @@ def load_config() -> Dict[str, Any]:
         'use_selenium': True
     }
     
+    result = default_config.copy()
+    
     if os.path.exists(CONFIG_FILE):
         try:
             with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
@@ -177,11 +204,12 @@ def load_config() -> Dict[str, Any]:
                 merged = {**default_config, **saved_config}
                 app_config = AppConfig.from_legacy_dict(merged)
                 # 转回扁平字典保持兼容
-                return _appconfig_to_flat_dict(app_config)
+                result = _appconfig_to_flat_dict(app_config)
         except Exception as e:
             logger.error(f"配置校验失败，使用默认配置: {e}")
     
-    return default_config
+    # 从环境变量注入敏感配置（优先级最高）
+    return _inject_env_secrets(result)
 
 def save_config(config: Dict[str, Any]):
     """保存配置"""

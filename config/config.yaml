@@ -1,4 +1,11 @@
 # 高低压成套设备招投标监控系统 - 配置文件
+# 
+# 安全提示：敏感信息（API Key、邮箱密码等）请勿填写在此文件中！
+# 请在项目根目录创建 .env 文件，填入敏感信息：
+#   DEEPSEEK_API_KEY=your-api-key
+#   EMAIL_SMTP_PASSWORD=your-auth-code
+#
+# .env 文件已被 Git 忽略，不会泄露到代码仓库中。
 
 keywords:
   include:
@@ -29,12 +36,13 @@ crawler:
   request_delay: 5
   max_retries: 3
 
+# 邮箱配置：只填非敏感字段，密码请放在 .env 的 EMAIL_SMTP_PASSWORD 中
 email:
   smtp_server: smtp.qq.com
   smtp_port: 465
   use_ssl: true
   sender: ""
-  password: ""
+  password: ""      # 从 .env 的 EMAIL_SMTP_PASSWORD 读取
   receiver: ""
 
 schedule:
