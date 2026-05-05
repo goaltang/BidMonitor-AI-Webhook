@@ -529,5 +529,4 @@ def get_default_sites() -> Dict[str, Dict[str, str]]:
     return {
         k: {"name": v["name"], "url": v["url"]}
         for k, v in SITES.items()
-        if v.get("crawler_type") != "builtin"
     }
