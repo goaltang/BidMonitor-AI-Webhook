@@ -99,6 +99,10 @@ class BidMonitor:
                 self.logger.info(f"正在爬取: {crawler.name}")
                 bids = crawler.crawl()
                 
+                if bids is None:
+                    self.logger.warning(f"爬虫 {crawler.name} 返回空结果，可能请求失败")
+                    continue
+                
                 # 匹配关键字
                 for bid in bids:
                     match_result = self.matcher.match_any(bid.title, bid.content)
@@ -146,7 +150,7 @@ class BidMonitor:
 
 def main():
     """主函数"""
-    parser = argparse.ArgumentParser(description='Drone Bidding Monitor System')
+    parser = argparse.ArgumentParser(description='高低压成套设备招投标监控系统')
     parser.add_argument('--config', '-c', default='config/config.yaml',
                         help='Config file path (default: config/config.yaml)')
     parser.add_argument('--crawl-once', action='store_true',

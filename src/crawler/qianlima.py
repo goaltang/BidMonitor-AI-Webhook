@@ -15,7 +15,13 @@ class QianlimaCrawler(BaseCrawler):
     
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
-        self.search_keywords = config.get('search_keywords', ['高低压成套设备', '开关柜', '配电柜'])
+        try:
+            from domain.industry import DEFAULT_SEARCH_KEYWORDS
+        except ImportError:
+            import sys, os
+            sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            from domain.industry import DEFAULT_SEARCH_KEYWORDS
+        self.search_keywords = config.get('search_keywords', DEFAULT_SEARCH_KEYWORDS[:3])
     
     def get_list_urls(self) -> List[str]:
         urls = []

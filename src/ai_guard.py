@@ -1,6 +1,12 @@
 import json
 import logging
 
+try:
+    from .domain.prompts import get_ai_system_prompt
+except ImportError:
+    from domain.prompts import get_ai_system_prompt
+
+
 class AIGuard:
     def __init__(self, config=None, log_callback=None):
         self.logger = logging.getLogger("AIGuard")
@@ -37,29 +43,7 @@ class AIGuard:
 
         self.log(f"🤖 [AI分析] 开始分析: {title[:40]}...")
 
-        system_prompt = (
-            "你是一个专业的招投标项目筛选专家。我们公司是做【高低压成套设备】的，"
-            "产品包括高压开关柜（KYN28、HXGN等）、低压配电柜（GGD、GCK、GCS、MNS等）、"
-            "箱式变电站、配电箱、环网柜、开闭所、电容补偿柜、动力柜、控制柜等。\n\n"
-            "请判断该项目是否适合我们公司投标。\n\n"
-            "【符合条件】：\n"
-            "- 高低压开关柜、配电柜的采购或招标\n"
-            "- 箱式变电站、箱变设备采购\n"
-            "- 环网柜、开闭所设备采购\n"
-            "- 变电站、配电房成套设备采购\n"
-            "- 电力工程配套的高低压成套设备\n"
-            "- 电容补偿柜、抽屉柜、动力柜、控制柜采购\n\n"
-            "【排除条件】：\n"
-            "- 单纯的电线电缆、变压器（非成套设备）\n"
-            "- 电力施工、安装工程（无设备采购）\n"
-            "- 弱电、智能化、安防、消防系统\n"
-            "- 设计、监理、咨询服务\n"
-            "- 清洗、清洁、运输等非设备类服务\n\n"
-            "返回JSON: {\"relevant\": true/false, \"reason\": \"50字以内的判断理由\"}"
-        )
-        
-        if self.custom_prompt:
-            system_prompt = self.custom_prompt
+        system_prompt = get_ai_system_prompt(self.custom_prompt)
 
         user_content = f"项目标题: {title}\n项目内容: {content[:800]}"
 

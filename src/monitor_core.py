@@ -24,6 +24,8 @@ try:
     from .crawler.qianlima import QianlimaCrawler
     from .crawler.chinatender import ChinaTenderCrawler
     from .crawler.dlnyzb import DlnyzbCrawler
+    
+    from .domain.sites import get_default_sites
 except ImportError:
     from database.storage import Storage, BidInfo
     from matcher.keyword import KeywordMatcher
@@ -39,54 +41,17 @@ except ImportError:
     from crawler.qianlima import QianlimaCrawler
     from crawler.chinatender import ChinaTenderCrawler
     from crawler.dlnyzb import DlnyzbCrawler
+    
+    from domain.sites import get_default_sites
 
 # 爬虫注册表
 def get_all_crawlers():
     """获取所有爬虫类"""
     return {
+        'ccgp': CCGPCrawler,
         'chinabidding': ChinaBiddingCrawler,
-    }
-
-# 默认内置网站配置 (用于通用爬虫)
-def get_default_sites():
-    """获取默认的内置网站列表（适配高低压成套设备行业）"""
-    return {
-        # === 通用招标平台（核心） ===
-        'chinabidding': {'name': '中国采购与招标网', 'url': 'http://www.chinabidding.cn/'},
-        'chinabiddingcc': {'name': '中国采购招标网', 'url': 'http://www.chinabidding.cc/'},
-        'chinazbcg': {'name': '中国招投标信息网', 'url': 'http://www.chinazbcg.com'},
-        'ebidding': {'name': '国义招标', 'url': 'http://www.ebidding.com/portal/'},
-        'zjycgzx': {'name': '浙江云采购中心', 'url': 'https://www.zjycgzx.com'},
-        # === 电网公司（配电侧核心客户） ===
-        'sgcc': {'name': '国家电网电子商务平台', 'url': 'https://ecp.sgcc.com.cn/'},
-        'csg': {'name': '中国南方电网供应链服务平台', 'url': 'http://www.bidding.csg.cn/'},
-        'sgccetp': {'name': '国网电子商务平台电工交易专区', 'url': 'https://sgccetp.com.cn/'},
-        # === 电力行业通用平台 ===
-        'dlzb': {'name': '中国电力招标网', 'url': 'http://www.dlzb.com/'},
-        'cpeinet': {'name': '中国电力设备信息网', 'url': 'http://www.cpeinet.com.cn/'},
-        # === 发电集团（电厂配电设备需求） ===
-        'gdtzb': {'name': '国电投招标网', 'url': 'http://www.gdtzb.com'},
-        'chng': {'name': '华能集团电子商务平台', 'url': 'http://ec.chng.com.cn/ecmall/'},
-        'chdtp': {'name': '中国华电电子商务平台', 'url': 'http://www.chdtp.com/'},
-        'cdt': {'name': '中国大唐电子商务平台', 'url': 'http://www.cdt-ec.com/'},
-        'neep': {'name': '国家能源e购', 'url': 'https://www.neep.shop/'},
-        'ceic': {'name': '国家能源集团生态协作平台', 'url': 'https://cooperation.ceic.com/'},
-        'crpower': {'name': '华润电力', 'url': 'https://b2b.crpower.com.cn'},
-        'cgnpc': {'name': '中广核电子商务平台', 'url': 'https://ecp.cgnpc.com.cn'},
-        'dongfang': {'name': '东方电气', 'url': 'http://nsrm.dongfang.com/'},
-        'ctg': {'name': '中国三峡电子采购平台', 'url': 'https://eps.ctg.com.cn/'},
-        'sdicc': {'name': '国投集团电子采购平台', 'url': 'https://www.sdicc.com.cn/'},
-        'powerbeijing': {'name': '北京京能电子商务平台', 'url': 'http://www.powerbeijing-ec.com'},
-        'hghn': {'name': '华光环能数字化采购管理平台', 'url': 'https://hgcg.hghngroup.com/'},
-        'cecep': {'name': '中国节能环保电子采购平台', 'url': 'http://www.ebidding.cecep.cn/'},
-        'gdg': {'name': '广州发展集团电子采购平台', 'url': 'https://eps.gdg.com.cn/'},
-        # === 工程总包（项目含配电设备） ===
-        'powerchina': {'name': '中国电建采购电子商务平台', 'url': 'http://ec.powerchina.cn'},
-        'powerchina_bid': {'name': '中国电建采购招标数智化平台', 'url': 'https://bid.powerchina.cn/bidweb/'},
-        'powerchina_ec': {'name': '中国电建设备物资集中采购平台', 'url': 'https://ec.powerchina.cn/'},
-        'powerchina_scm': {'name': '中国电建供应链云服务平台', 'url': 'https://scm.powerchina.cn/'},
-        'ceec': {'name': '中国能建电子采购平台', 'url': 'https://ec.ceec.net.cn/'},
-        'crc': {'name': '华润集团守正电子招标采购平台', 'url': 'https://szecp.crc.com.cn/'},
+        'ebnew': EbnewCrawler,
+        'plap': PLAPCrawler,
     }
 
 

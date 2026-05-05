@@ -115,7 +115,7 @@ class EmailNotifier:
         """发送测试邮件"""
         test_bids = [
             BidInfo(
-                title="Test Bid - Drone Procurement Project",
+                title="【测试邮件】高低压成套设备招标监控通知",
                 url="https://example.com/bid/12345",
                 publish_date=datetime.now().strftime('%Y-%m-%d'),
                 source="Test Source",

@@ -30,9 +30,15 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
 # 导入原有模块
-from monitor_core import MonitorCore, get_default_sites
+from monitor_core import MonitorCore
 from database.storage import Storage, BidInfo
 from ai_guard import AIGuard
+from domain.sites import get_default_sites
+from domain.industry import (
+    DEFAULT_INCLUDE_KEYWORDS,
+    DEFAULT_EXCLUDE_KEYWORDS,
+    DEFAULT_MUST_CONTAIN_KEYWORDS,
+)
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
@@ -92,18 +98,17 @@ def verify_credentials(credentials: HTTPBasicCredentials = Depends(security)):
 def load_config() -> Dict[str, Any]:
     """加载配置"""
     default_config = {
-        'keywords': '光伏,风电,风力发电,光伏巡检,风电巡检,无人机巡检,光伏无人机,风机巡检,风力发电巡检,光伏电站无人机,风电场无人机,光伏运维,风机运维,叶片巡检,红外巡检,新能源巡检',
-        'exclude': '大疆',
-        'must_contain': '无人机',
+        'keywords': ','.join(DEFAULT_INCLUDE_KEYWORDS),
+        'exclude': ','.join(DEFAULT_EXCLUDE_KEYWORDS),
+        'must_contain': ','.join(DEFAULT_MUST_CONTAIN_KEYWORDS),
         'interval': 10,
         'enabled_sites': [
-            'chinabidding', 'dlzb', 'chinabiddingcc', 'gdtzb', 'cpeinet', 'espic',
+            'chinabidding', 'dlzb', 'chinabiddingcc', 'gdtzb', 'cpeinet',
             'chng', 'powerchina', 'powerchina_bid', 'powerchina_ec', 'powerchina_scm',
-            'powerchina_idx', 'powerchina_nw', 'ceec', 'chdtp', 'chec_gys', 'chinazbcg',
+            'ceec', 'chdtp', 'chinazbcg',
             'cdt', 'ebidding', 'neep', 'ceic', 'sgcc', 'cecep', 'gdg', 'crpower', 'crc',
-            'longi', 'cgnpc', 'dongfang', 'zjycgzx', 'ctg', 'sdicc', 'csg', 'sgccetp',
-            'powerbeijing', 'ccccltd', 'jchc', 'minmetals', 'sunwoda', 'cnbm', 'hghn',
-            'xcmg', 'xinecai', 'ariba', 'faw'
+            'cgnpc', 'dongfang', 'zjycgzx', 'ctg', 'sdicc', 'csg', 'sgccetp',
+            'powerbeijing', 'hghn'
         ],
         'email_enabled': True,
         'sms_enabled': True,
@@ -590,7 +595,7 @@ async def get_config():
 @app.post("/api/config")
 async def update_config(config: ConfigModel):
     """更新配置"""
-    update_data = config.dict(exclude_unset=True)
+    update_data = config.model_dump(exclude_unset=True)
     app_state.config.update(update_data)
     save_config(app_state.config)
     
