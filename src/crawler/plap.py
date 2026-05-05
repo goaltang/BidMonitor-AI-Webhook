@@ -16,7 +16,7 @@ class PLAPCrawler(BaseCrawler):
     
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
-        self.search_keywords = config.get('search_keywords', ['无人机', 'UAV'])
+        self.search_keywords = config.get('search_keywords', ['高低压成套设备', '开关柜', '配电柜'])
     
     def get_list_urls(self) -> List[str]:
         """生成URL列表"""

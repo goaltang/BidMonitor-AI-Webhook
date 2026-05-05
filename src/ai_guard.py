@@ -26,7 +26,7 @@ class AIGuard:
 
     def check_relevance(self, title, content="", raise_on_error=False):
         """
-        检查项目是否与无人机巡检相关
+        检查项目是否与高低压成套设备相关
         返回: (is_relevant: bool, reason: str)
         """
         if not self.enabled:

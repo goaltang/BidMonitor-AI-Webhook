@@ -1,5 +1,5 @@
 """
-无人机招投标监控系统 - 主程序入口
+高低压成套设备招投标监控系统 - 主程序入口
 """
 import os
 import sys
@@ -172,7 +172,7 @@ def main():
     logger = logging.getLogger("main")
     
     logger.info("=" * 60)
-    logger.info("  无人机招投标监控系统 启动")
+    logger.info("  高低压成套设备招投标监控系统 启动")
     logger.info("=" * 60)
     
     # 创建监控器

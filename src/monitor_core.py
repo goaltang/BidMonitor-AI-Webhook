@@ -23,10 +23,7 @@ try:
     from .crawler.bidcenter import BidcenterCrawler
     from .crawler.qianlima import QianlimaCrawler
     from .crawler.chinatender import ChinaTenderCrawler
-    from .crawler.solarbe import SolarbeCrawler
-    from .crawler.pvyuan import PvyuanCrawler
     from .crawler.dlnyzb import DlnyzbCrawler
-    from .crawler.youuav import YouuavCrawler
 except ImportError:
     from database.storage import Storage, BidInfo
     from matcher.keyword import KeywordMatcher
@@ -41,10 +38,7 @@ except ImportError:
     from crawler.bidcenter import BidcenterCrawler
     from crawler.qianlima import QianlimaCrawler
     from crawler.chinatender import ChinaTenderCrawler
-    from crawler.solarbe import SolarbeCrawler
-    from crawler.pvyuan import PvyuanCrawler
     from crawler.dlnyzb import DlnyzbCrawler
-    from crawler.youuav import YouuavCrawler
 
 # 爬虫注册表
 def get_all_crawlers():
