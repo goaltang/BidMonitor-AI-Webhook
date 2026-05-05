@@ -1383,7 +1383,7 @@ class SiteManagerDialog:
             w['arrow'].config(text="▶")
             w['expanded'] = False
         else:
-            w['content'].pack(fill=tk.X)
+            w['content'].pack(fill=tk.X, after=w['header'])
             w['arrow'].config(text="▼")
             w['expanded'] = True
             
