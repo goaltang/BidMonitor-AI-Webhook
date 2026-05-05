@@ -83,6 +83,21 @@ class SiteHealthChecker:
             )
             elapsed = time.time() - start
             
+            # 某些网站不支持 HEAD，回退到 GET
+            if resp.status_code == 405:
+                start = time.time()
+                resp = requests.get(
+                    url,
+                    timeout=self.TIMEOUT,
+                    allow_redirects=True,
+                    headers={
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                    },
+                    stream=True
+                )
+                resp.close()  # 只读取头部，不下载内容
+                elapsed = time.time() - start
+            
             if resp.status_code == 200:
                 if elapsed < self.SLOW_THRESHOLD:
                     status = "ok"

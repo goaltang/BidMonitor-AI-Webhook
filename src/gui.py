@@ -53,6 +53,21 @@ except ImportError:
         from notifier.wechat import WeChatNotifier
         from notifier.voice import VoiceNotifier
         from utils.system import AutoStart, SystemTray, TRAY_AVAILABLE
+        from domain.sites import (
+            get_sites, get_site_config, get_categories,
+            get_sites_by_category, get_default_enabled_sites,
+            get_all_site_keys, validate_enabled_sites, SITES,
+        )
+        from crawler.health import SiteHealthChecker
+
+# 确保 domain.sites 和 crawler.health 一定被导入
+# (放在 try/except 之外，避免嵌套导入的隐蔽问题)
+from domain.sites import (
+    get_sites, get_site_config, get_categories,
+    get_sites_by_category, get_default_enabled_sites,
+    get_all_site_keys, validate_enabled_sites, SITES,
+)
+from crawler.health import SiteHealthChecker
 
 # AI Provider 预设库
 try:
