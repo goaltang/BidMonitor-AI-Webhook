@@ -1957,8 +1957,19 @@ class MonitorGUI:
         tk.Button(ai_model_row, text="🧪 测试连接", command=self._test_ai_connection,
                   bg="#6366f1", fg="white", relief=tk.GROOVE, padx=10).pack(side=tk.LEFT, padx=15)
         
+        # 自定义 Prompt 输入框
+        ai_prompt_row = ttk.Frame(ai_frame)
+        ai_prompt_row.pack(fill=tk.X, pady=(8, 0))
+        
+        ttk.Label(ai_prompt_row, text="自定义判断标准:").pack(anchor=tk.W)
+        
+        self.ai_prompt_text = tk.Text(ai_frame, height=6, width=70, font=("Microsoft YaHei", 9),
+                                       wrap=tk.WORD, relief=tk.SOLID, borderwidth=1)
+        self.ai_prompt_text.pack(fill=tk.X, pady=(3, 0))
+        # 文本框留空时使用 ai_guard.py 内置默认提示词
+        
         # 提示词说明
-        ttk.Label(ai_frame, text="提示: 选择预设API或自由输入。切换URL会自动填充对应的Key和模型。",
+        ttk.Label(ai_frame, text="提示: 选择预设API或自由输入。切换URL会自动填充对应的Key和模型。留空则使用默认判断标准。",
                   foreground="#888").pack(anchor=tk.W, pady=(5, 0))
         
         # === 运行控制 ===
@@ -2985,6 +2996,11 @@ class MonitorGUI:
                             self.ai_key_var.set(config['ai'].get('api_key', ''))
                         if hasattr(self, 'ai_model_var'):
                             self.ai_model_var.set(config['ai'].get('model', 'deepseek-chat'))
+                        if hasattr(self, 'ai_prompt_text'):
+                            saved_prompt = config['ai'].get('prompt', '')
+                            if saved_prompt:
+                                self.ai_prompt_text.delete('1.0', tk.END)
+                                self.ai_prompt_text.insert(tk.END, saved_prompt)
                     # 加载Selenium设置（只有在Selenium可用时才根据配置启用）
                     if hasattr(self, 'use_selenium_var'):
                         saved_selenium = config.get('use_selenium', True)
@@ -3044,6 +3060,7 @@ class MonitorGUI:
                 'base_url': self.ai_url_var.get() if hasattr(self, 'ai_url_var') else 'https://cc.honoursoft.cn/',
                 'api_key': self.ai_key_var.get() if hasattr(self, 'ai_key_var') else '',
                 'model': self.ai_model_var.get().strip() if hasattr(self, 'ai_model_var') else 'claude-sonnet-4-5-20250929-thinking',
+                'prompt': self.ai_prompt_text.get('1.0', tk.END).strip() if hasattr(self, 'ai_prompt_text') else '',
             },
         }
         try:
@@ -3083,11 +3100,13 @@ class MonitorGUI:
         def run_test():
             try:
                 from ai_guard import AIGuard
+                prompt = self.ai_prompt_text.get('1.0', tk.END).strip() if hasattr(self, 'ai_prompt_text') else ''
                 guard = AIGuard({
                     'api_key': key,
                     'base_url': url,
                     'model': model,
-                    'enable': True
+                    'enable': True,
+                    'prompt': prompt
                 })
                 is_rel, reason = guard.check_relevance(
                     "某省风力发电场无人机智能巡检服务采购项目", 
