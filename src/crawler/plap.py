@@ -45,7 +45,7 @@ class PLAPCrawler(BaseCrawler):
                 if not title or len(title) < 5:
                     continue
                 
-                # 检查是否包含无人机相关关键字
+                # 检查是否包含相关关键字
                 keywords_lower = [kw.lower() for kw in self.search_keywords]
                 title_lower = title.lower()
                 if not any(kw in title_lower for kw in keywords_lower):
