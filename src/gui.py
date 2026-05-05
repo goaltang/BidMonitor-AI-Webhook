@@ -1290,8 +1290,18 @@ class SiteManagerDialog:
         # === 底部状态图例 ===
         legend = ttk.LabelFrame(frame, text="状态说明", padding="8")
         legend.grid(row=3, column=0, sticky="ew", pady=(8, 0))
-        ttk.Label(legend, text="🟢 访问正常   🟡 响应较慢   🔴 访问失败   ⚪ 未检测", 
-                  font=("Microsoft YaHei", 9)).pack(anchor=tk.W)
+        
+        legend_row = ttk.Frame(legend)
+        legend_row.pack(anchor=tk.W)
+        tk.Label(legend_row, bg="#4caf50", width=2).pack(side=tk.LEFT, pady=1)
+        ttk.Label(legend_row, text=" 访问正常 ", font=("Microsoft YaHei", 9)).pack(side=tk.LEFT)
+        tk.Label(legend_row, bg="#ff9800", width=2).pack(side=tk.LEFT, padx=(8, 0), pady=1)
+        ttk.Label(legend_row, text=" 响应较慢 ", font=("Microsoft YaHei", 9)).pack(side=tk.LEFT)
+        tk.Label(legend_row, bg="#f44336", width=2).pack(side=tk.LEFT, padx=(8, 0), pady=1)
+        ttk.Label(legend_row, text=" 访问失败 ", font=("Microsoft YaHei", 9)).pack(side=tk.LEFT)
+        tk.Label(legend_row, bg="#bdbdbd", width=2).pack(side=tk.LEFT, padx=(8, 0), pady=1)
+        ttk.Label(legend_row, text=" 未检测", font=("Microsoft YaHei", 9)).pack(side=tk.LEFT)
+        
         ttk.Label(legend, text="提示: 搜索框可按名称快速查找；点击分类标题可展开/折叠；右侧「高级设置」可单独调整每个网站的参数", 
                   foreground="gray", font=("Microsoft YaHei", 8), wraplength=580).pack(anchor=tk.W, pady=(4, 0))
         
@@ -1342,10 +1352,10 @@ class SiteManagerDialog:
             row.pack(fill=tk.X, pady=2)
             self.site_rows[key] = row
             
-            # 健康状态图标
-            health_lbl = ttk.Label(row, text="⚪", width=2)
-            health_lbl.pack(side=tk.LEFT)
-            self.health_labels[key] = health_lbl
+            # 健康状态色块（tk.Label 支持 bg）
+            health_box = tk.Label(row, bg="#bdbdbd", width=2)
+            health_box.pack(side=tk.LEFT)
+            self.health_labels[key] = health_box
             
             # 开关
             cb = ttk.Checkbutton(row, text=name, variable=var)
@@ -1462,8 +1472,8 @@ class SiteManagerDialog:
         lbl = self.health_labels.get(key)
         if not lbl:
             return
-        icon = {"ok": "🟢", "slow": "🟡", "down": "🔴"}.get(result.status, "⚪")
-        lbl.config(text=icon)
+        colors = {"ok": "#4caf50", "slow": "#ff9800", "down": "#f44336"}
+        lbl.config(bg=colors.get(result.status, "#bdbdbd"))
         
     def _create_custom_tab(self, notebook):
         frame = ttk.Frame(notebook, padding="10")
