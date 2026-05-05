@@ -3401,6 +3401,16 @@ class MonitorGUI:
                                     'latency_ms': 0,
                                 }]
                                 self._ai_active_id = 'legacy_migrated'
+                        else:
+                            # === 关键修复：从 .env 回填每个 Provider 的 API Key ===
+                            for p in self._ai_providers:
+                                pid = p.get('id', '')
+                                # 优先读取 AI_KEY_<id>，回退到 DEEPSEEK_API_KEY
+                                key = env_secrets.get(f'AI_KEY_{pid}', '')
+                                if not key:
+                                    key = env_secrets.get('DEEPSEEK_API_KEY', '')
+                                if key:
+                                    p['api_key'] = key
                         
                         self._update_ai_status_label()
                     # 加载Selenium设置（只有在Selenium可用时才根据配置启用）
@@ -3487,14 +3497,25 @@ class MonitorGUI:
         # 先把敏感字段提取到 .env（安全存储）
         env_updates = {}
         
-        # 收集所有 AI Provider 的 API Key（优先使用第一个活跃Provider的key作为DEEPSEEK_API_KEY兼容）
+        # 收集所有 AI Provider 的 API Key（每个Provider独立保存，支持多Provider多Key）
         active_key = ""
         for p in getattr(self, '_ai_providers', []):
+            pid = p.get('id', '')
             key = p.get('api_key', '')
-            if key:
-                env_updates['DEEPSEEK_API_KEY'] = key  # 兼容旧版环境变量名
-                active_key = key
-                break
+            if key and pid:
+                # 每个Provider的key独立存储：AI_KEY_<provider_id>
+                env_updates[f'AI_KEY_{pid}'] = key
+                # 活跃Provider的key同时存到 DEEPSEEK_API_KEY 兼容旧版
+                if pid == self._ai_active_id:
+                    env_updates['DEEPSEEK_API_KEY'] = key
+                    active_key = key
+        # 兜底：如果没有活跃Provider的key，用第一个有key的作为 DEEPSEEK_API_KEY
+        if not active_key:
+            for p in getattr(self, '_ai_providers', []):
+                key = p.get('api_key', '')
+                if key:
+                    env_updates['DEEPSEEK_API_KEY'] = key
+                    break
         
         # 从 email_configs 中提取第一个邮箱的密码
         if self.email_configs and len(self.email_configs) > 0:
@@ -3787,12 +3808,17 @@ class MonitorGUI:
             ai_config = None
             if hasattr(self, 'ai_enable_var') and self.ai_enable_var.get():
                 # 从 .env 重新读取 API Key（因为保存时清空了JSON中的key）
+                # 加载时已经回填过，这里做双重保险
                 env_secrets = self._read_env_file()
                 providers_with_key = []
                 for p in self._ai_providers:
                     p_copy = dict(p)
                     if not p_copy.get('api_key'):
-                        p_copy['api_key'] = env_secrets.get('DEEPSEEK_API_KEY', '')
+                        pid = p_copy.get('id', '')
+                        key = env_secrets.get(f'AI_KEY_{pid}', '') if pid else ''
+                        if not key:
+                            key = env_secrets.get('DEEPSEEK_API_KEY', '')
+                        p_copy['api_key'] = key
                     providers_with_key.append(p_copy)
                 
                 ai_config = {
