@@ -1489,8 +1489,10 @@ class AIConfigManagerDialog(tk.Toplevel):
         return sel[0] if sel else -1
     
     def _add_provider(self):
+        self.grab_release()  # 临时释放焦点，避免死锁
         dialog = AIProviderDialog(self)
         self.wait_window(dialog)
+        self.grab_set()  # 恢复焦点
         if dialog.result:
             self.providers.append(dialog.result)
             # 如果是第一个Provider，自动设为当前
@@ -1503,8 +1505,10 @@ class AIConfigManagerDialog(tk.Toplevel):
         if idx < 0:
             messagebox.showwarning("提示", "请先选择一个 Provider")
             return
+        self.grab_release()  # 临时释放焦点，避免死锁
         dialog = AIProviderDialog(self, self.providers[idx], edit_mode=True)
         self.wait_window(dialog)
+        self.grab_set()  # 恢复焦点
         if dialog.result:
             self.providers[idx] = dialog.result
             self._refresh_list()
