@@ -1931,6 +1931,11 @@ class MonitorGUI:
                                           values=all_keys, width=50)
         self.ai_key_combo.pack(side=tk.LEFT, padx=5)
         
+        # 安全提示
+        ai_hint = ttk.Label(ai_frame, text="🔒 API Key 将自动保存到 .env 文件（Git 忽略，不会泄露）", 
+                            foreground="gray", font=("Microsoft YaHei", 8))
+        ai_hint.pack(anchor=tk.W, padx=(0, 0), pady=(2, 0))
+        
         # 模型行
         ai_model_row = ttk.Frame(ai_frame)
         ai_model_row.pack(fill=tk.X, pady=(5, 0))
@@ -2965,9 +2970,19 @@ class MonitorGUI:
                     self.must_contain_var.set(config.get('must_contain', self.DEFAULT_MUST_CONTAIN))
                     self.interval_var.set(str(config.get('interval', self.DEFAULT_INTERVAL)))
                     self.email_configs = config.get('email_configs', self.email_configs)
+                    # 从 .env 读取邮箱密码并回填到第一个邮箱配置
+                    env_pwd = env_secrets.get('EMAIL_SMTP_PASSWORD', '')
+                    if env_pwd and self.email_configs and len(self.email_configs) > 0:
+                        self.email_configs[0]['password'] = env_pwd
                     self.sms_config = config.get('sms_config', self.sms_config)
+                    # 从 .env 读取短信/语音 Secret 并回填
+                    sms_secret = env_secrets.get('SMS_ACCESS_KEY_SECRET', '')
+                    if sms_secret and self.sms_config:
+                        self.sms_config['access_key_secret'] = sms_secret
+                    voice_secret = env_secrets.get('VOICE_ACCESS_KEY_SECRET', '')
+                    if voice_secret and self.voice_config:
+                        self.voice_config['access_key_secret'] = voice_secret
                     self.wechat_config = config.get('wechat_config', self.wechat_config)
-                    self.voice_config = config.get('voice_config', self.voice_config)
                     self.auto_start_enabled = config.get('auto_start', False)
                     self.minimize_to_tray = config.get('minimize_to_tray', True)
                     # 默认启用所有内置网站
@@ -2977,14 +2992,16 @@ class MonitorGUI:
                     self.custom_sites = config.get('custom_sites', [])
                     # 加载联系人列表
                     self.contacts = config.get('contacts', self.contacts)
-                    # 加载 AI 配置
+                    # 加载 AI 配置（非敏感字段从 JSON，敏感字段从 .env）
+                    env_secrets = self._read_env_file()
                     if 'ai' in config:
                         if hasattr(self, 'ai_enable_var'):
                             self.ai_enable_var.set(config['ai'].get('enable', False))
                         if hasattr(self, 'ai_url_var'):
                             self.ai_url_var.set(config['ai'].get('base_url', 'https://api.deepseek.com'))
                         if hasattr(self, 'ai_key_var'):
-                            self.ai_key_var.set(config['ai'].get('api_key', ''))
+                            # 优先从 .env 读取 API Key，回退到 JSON
+                            self.ai_key_var.set(env_secrets.get('DEEPSEEK_API_KEY', config['ai'].get('api_key', '')))
                         if hasattr(self, 'ai_model_var'):
                             self.ai_model_var.set(config['ai'].get('model', 'deepseek-chat'))
                         if hasattr(self, 'ai_prompt_text'):
@@ -3025,7 +3042,72 @@ class MonitorGUI:
             except Exception as e:
                 self.log(f"加载配置失败: {e}")
     
+    def _read_env_file(self):
+        """读取 .env 文件返回字典"""
+        env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env')
+        if not os.path.exists(env_path):
+            return {}
+        result = {}
+        try:
+            with open(env_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith('#') or '=' not in line:
+                        continue
+                    key, value = line.split('=', 1)
+                    result[key.strip()] = value.strip()
+        except Exception:
+            pass
+        return result
+
+    def _write_env_file(self, updates):
+        """更新 .env 文件中的指定键值"""
+        env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env')
+        existing = self._read_env_file()
+        existing.update(updates)
+        # 保留 .env 的基本结构注释
+        header = "# BidMonitor 敏感配置文件\n# 此文件不会被 Git 跟踪，请妥善保管\n\n"
+        lines = [header]
+        groups = {
+            'DEEPSEEK_API_KEY': '# AI 配置\n',
+            'EMAIL_SMTP_PASSWORD': '\n# 邮箱授权码\n',
+            'SMS_ACCESS_KEY_SECRET': '\n# 短信/语音 AccessKey Secret\n',
+        }
+        written_keys = set()
+        for key, comment in groups.items():
+            if key in existing:
+                lines.append(comment)
+                lines.append(f"{key}={existing[key]}\n")
+                written_keys.add(key)
+        # 写入剩余未分组的键
+        for key, value in existing.items():
+            if key not in written_keys:
+                lines.append(f"{key}={value}\n")
+        try:
+            with open(env_path, 'w', encoding='utf-8') as f:
+                f.writelines(lines)
+        except Exception as e:
+            self.log(f"保存 .env 失败: {e}")
+
     def _save_config(self):
+        # 先把敏感字段提取到 .env（安全存储）
+        env_updates = {}
+        if hasattr(self, 'ai_key_var'):
+            env_updates['DEEPSEEK_API_KEY'] = self.ai_key_var.get()
+        # 从 email_configs 中提取第一个邮箱的密码
+        if self.email_configs and len(self.email_configs) > 0:
+            first_email = self.email_configs[0]
+            if 'password' in first_email:
+                env_updates['EMAIL_SMTP_PASSWORD'] = first_email['password']
+        # 短信/语音 Secret
+        if self.sms_config and 'access_key_secret' in self.sms_config:
+            env_updates['SMS_ACCESS_KEY_SECRET'] = self.sms_config['access_key_secret']
+        if self.voice_config and 'access_key_secret' in self.voice_config:
+            env_updates['VOICE_ACCESS_KEY_SECRET'] = self.voice_config['access_key_secret']
+        if env_updates:
+            self._write_env_file(env_updates)
+
+        # 非敏感配置写入 JSON
         config = {
             'keywords': self.keywords_var.get(),
             'exclude': self.exclude_var.get(),
@@ -3049,7 +3131,7 @@ class MonitorGUI:
             'ai': {
                 'enable': self.ai_enable_var.get() if hasattr(self, 'ai_enable_var') else False,
                 'base_url': self.ai_url_var.get() if hasattr(self, 'ai_url_var') else 'https://cc.honoursoft.cn/',
-                'api_key': self.ai_key_var.get() if hasattr(self, 'ai_key_var') else '',
+                'api_key': '',  # 敏感字段已移到 .env
                 'model': self.ai_model_var.get().strip() if hasattr(self, 'ai_model_var') else 'claude-sonnet-4-5-20250929-thinking',
                 'prompt': self.ai_prompt_text.get('1.0', tk.END).strip() if hasattr(self, 'ai_prompt_text') else '',
             },
