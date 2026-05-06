@@ -29,7 +29,8 @@ data/
 
 # 日志文件
 *.log
-output_log.txt
+logs/
+/output_log.txt
 
 # Selenium / ChromeDriver
 chromedriver.exe
@@ -44,12 +45,14 @@ dist/
 *.spec
 _internal/
 
-# 临时脚本和文件
+# 临时文件
+tmp/
 *.tmp
 *.bak
-add_progress*.py
-fix_*.py
-verify_*.py
+
+# 一次性分析工具（保留目录，忽略具体脚本）
+tools/analyze_*.py
+tools/update_all_sites.py
 
 # Excel等资料文件
 *.xlsx

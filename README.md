@@ -199,6 +199,10 @@ BidMonitor-AI-Webhook/
 │   ├── analyze_cpeinet.py        # 网站分析工具
 │   ├── verify_system.py          # 系统验证
 │   └── pack.bat                  # Windows 打包脚本
+├── tools/                        # 分析/诊断/一次性工具脚本
+├── logs/                         # 运行日志与输出文件
+├── tmp/                          # 临时抓取的 HTML/数据
+├── docs/                         # 规划文档、迁移指南
 ├── run.py                        # 桌面版入口
 ├── .env.example                  # 敏感配置模板
 ├── requirements.txt              # 依赖列表
