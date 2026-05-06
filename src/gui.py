@@ -1914,29 +1914,40 @@ class AIProviderDialog(tk.Toplevel):
         self.mode_var.set(ptype)
         self._on_mode_change()
         
-        self.name_var.set(self.provider_data.get('name', ''))
-        self.url_var.set(self.provider_data.get('base_url', ''))
-        self.key_var.set(self.provider_data.get('api_key', ''))
-        self.model_var.set(self.provider_data.get('model', ''))
-        self.notes_var.set(self.provider_data.get('notes', ''))
-        self.model_combo['values'] = self.provider_data.get('models', [])
-        
         if ptype == 'preset':
             preset_id = self.provider_data.get('preset_id', '')
             self._current_preset_id = preset_id
-            # 尝试选中对应的类别和预设
+            # 尝试选中对应的类别和预设（手动操作 UI，不触发自动填充事件链）
             preset = get_preset_by_id(preset_id)
             if preset:
                 for cat, ids in self.categories.items():
                     if preset_id in ids:
                         self.category_var.set(cat)
-                        self._on_category_change(None)
+                        # 手动填充 preset 列表，避免 _on_category_change 触发 _on_preset_change 覆盖数据
+                        preset_ids = self.categories.get(cat, [])
+                        preset_names = []
+                        self._preset_id_map = {}
+                        for pid in preset_ids:
+                            p = get_preset_by_id(pid)
+                            if p:
+                                name = p.get("name", pid)
+                                preset_names.append(name)
+                                self._preset_id_map[name] = pid
+                        self.preset_combo['values'] = preset_names
                         # 选中对应的预设名称
                         for name, pid in self._preset_id_map.items():
                             if pid == preset_id:
                                 self.preset_var.set(name)
                                 break
                         break
+        
+        # 最后回填用户实际保存的数据（避免被预设自动填充覆盖）
+        self.name_var.set(self.provider_data.get('name', ''))
+        self.url_var.set(self.provider_data.get('base_url', ''))
+        self.key_var.set(self.provider_data.get('api_key', ''))
+        self.model_var.set(self.provider_data.get('model', ''))
+        self.notes_var.set(self.provider_data.get('notes', ''))
+        self.model_combo['values'] = self.provider_data.get('models', [])
     
     def _get_result(self) -> Dict[str, Any]:
         """收集表单数据"""
