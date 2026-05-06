@@ -1280,6 +1280,7 @@ class SiteManagerDialog:
         self.site_rows = {}
         self.health_labels = {}
         self.health_tooltips = {}  # Phase 2: 悬停提示
+        self.test_buttons = {}  # 单站测试按钮引用
         
         sites_by_cat = get_sites_by_category()
         
@@ -1447,6 +1448,12 @@ class SiteManagerDialog:
                 ttk.Label(row, text="已自定义", foreground="#e65100", 
                          font=("Microsoft YaHei", 8)).pack(side=tk.LEFT, padx=4)
             
+            # 单站测试按钮
+            test_btn = ttk.Button(row, text="测试", width=6,
+                      command=lambda k=key: self._test_single_site(k))
+            test_btn.pack(side=tk.RIGHT, padx=2)
+            self.test_buttons[key] = test_btn
+            
             # 高级设置按钮（文字按钮，替代emoji）
             ttk.Button(row, text="高级设置", width=8, 
                       command=lambda k=key, n=name: self._config_site(k, n)).pack(side=tk.RIGHT, padx=2)
@@ -1562,6 +1569,27 @@ class SiteManagerDialog:
             "error_type": result.error_type,
         }
         self._update_health_tooltip(key, probe)
+    
+    def _test_single_site(self, key: str):
+        """单独测试一个网站的健康状态"""
+        sites = get_sites()
+        site_cfg = sites.get(key)
+        if not site_cfg:
+            return
+        
+        # 禁用该站点的测试按钮
+        btn = self.test_buttons.get(key)
+        if btn:
+            btn.config(state=tk.DISABLED, text="检测中...")
+        
+        def run_test():
+            result = self.health_checker.check_site(key, site_cfg, force=True)
+            self.dialog.after(0, lambda: (
+                self._update_health_label(key, result),
+                btn.config(state=tk.NORMAL, text="测试") if btn else None
+            ))
+        
+        threading.Thread(target=run_test, daemon=True).start()
         
     def _create_custom_tab(self, notebook):
         frame = ttk.Frame(notebook, padding="10")
