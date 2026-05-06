@@ -1190,9 +1190,13 @@ class SiteManagerDialog:
         self.site_configs = dict(site_configs) if site_configs else {}
         
         # Phase 2: 初始化 Storage 并接入健康检测器
+        # Phase 3: 接入告警管理器
         from database.storage import Storage
+        from crawler.alert import SiteAlertManager
         self.storage = Storage()
-        self.health_checker = SiteHealthChecker(storage=self.storage)
+        wechat_cfg = self._load_wechat_config()
+        self.alert_manager = SiteAlertManager(self.storage, wechat_config=wechat_cfg)
+        self.health_checker = SiteHealthChecker(storage=self.storage, alert_manager=self.alert_manager)
         
         self.dialog = tk.Toplevel(parent)
         self.dialog.title("监控网站管理")
@@ -1315,6 +1319,20 @@ class SiteManagerDialog:
         # Phase 2: 从数据库加载历史状态预渲染色块
         self._load_health_from_db()
         
+    def _load_wechat_config(self) -> dict:
+        """加载微信配置（用于告警通道）"""
+        try:
+            import yaml
+            config_paths = ['config/config.yaml', '../config/config.yaml']
+            for path in config_paths:
+                if os.path.exists(path):
+                    with open(path, 'r', encoding='utf-8') as f:
+                        cfg = yaml.safe_load(f) or {}
+                        return cfg.get('wechat_config', {})
+        except Exception:
+            pass
+        return {}
+    
     def _load_health_from_db(self):
         """从数据库读取最近探测状态，预渲染色块"""
         if self.storage is None:

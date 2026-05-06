@@ -42,11 +42,12 @@ class SiteHealthChecker:
     # 最小检测间隔（秒）
     MIN_CHECK_INTERVAL = 300  # 5 分钟
     
-    def __init__(self, storage=None):
+    def __init__(self, storage=None, alert_manager=None):
         self._cache: Dict[str, HealthResult] = {}
         self._last_check: Dict[str, float] = {}
         self._lock = threading.Lock()
         self.storage = storage  # Phase 2: 可选的持久化存储
+        self.alert_manager = alert_manager  # Phase 3: 可选的告警管理器
     
     def _create_crawler(self, site_key: str, site_cfg: Dict[str, Any]) -> Optional[Any]:
         """根据站点配置创建对应的 Crawler 实例（仅用于探测）
@@ -183,6 +184,15 @@ class SiteHealthChecker:
                 )
             except Exception:
                 # 存储失败不应影响检测流程
+                pass
+        
+        # Phase 3: 状态变更告警
+        if self.alert_manager is not None:
+            try:
+                site_name = site_cfg.get('name') if isinstance(site_cfg, dict) else None
+                self.alert_manager.check_and_notify(site_key, site_name)
+            except Exception:
+                # 告警失败不应影响检测流程
                 pass
         
         return result

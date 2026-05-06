@@ -42,7 +42,8 @@ class MonitorCore:
                  sms_config: Dict[str, Any] = None,
                  log_callback: Callable[[str], None] = None,
                  ai_config: Dict[str, Any] = None,
-                 circuit_breaker=None):
+                 circuit_breaker=None,
+                 alert_manager=None):
         """
         初始化监控核心
         
@@ -59,6 +60,7 @@ class MonitorCore:
             sms_config: 短信配置
             log_callback: 日志回调函数
             circuit_breaker: 可选的熔断器实例（Phase 2）
+            alert_manager: 可选的告警管理器实例（Phase 3）
         """
         self.keywords = keywords
         self.exclude_keywords = exclude_keywords or []
@@ -73,6 +75,7 @@ class MonitorCore:
         # 初始化组件
         self.storage = Storage()
         self.circuit_breaker = circuit_breaker
+        self.alert_manager = alert_manager
         self.matcher = KeywordMatcher(keywords, exclude_keywords, must_contain_keywords)
         
         # 加载配置文件
@@ -335,6 +338,12 @@ class MonitorCore:
                 # Phase 2: 记录熔断结果
                 if self.circuit_breaker:
                     self.circuit_breaker.record(crawler.name, crawl_success)
+                # Phase 3: 状态变更告警
+                if self.alert_manager:
+                    try:
+                        self.alert_manager.check_and_notify(crawler.name, crawler.name)
+                    except Exception:
+                        pass
         
         # 发送通知
         if all_matched_bids:

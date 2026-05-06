@@ -45,13 +45,14 @@ def setup_logging(config: AppConfig):
 class BidMonitor:
     """招标监控器主类"""
     
-    def __init__(self, config: AppConfig, circuit_breaker=None):
+    def __init__(self, config: AppConfig, circuit_breaker=None, alert_manager=None):
         self.config = config
         self.logger = logging.getLogger("monitor")
         
         # 初始化组件
         self.storage = Storage()
         self.circuit_breaker = circuit_breaker
+        self.alert_manager = alert_manager
         self.matcher = KeywordMatcher(
             include_keywords=config.industry.include,
             exclude_keywords=config.industry.exclude,
@@ -125,6 +126,12 @@ class BidMonitor:
                 # Phase 2: 记录熔断结果
                 if self.circuit_breaker:
                     self.circuit_breaker.record(crawler.name, crawl_success)
+                # Phase 3: 状态变更告警
+                if self.alert_manager:
+                    try:
+                        self.alert_manager.check_and_notify(crawler.name, crawler.name)
+                    except Exception:
+                        pass
         
         # 发送通知
         if all_matched_bids:
