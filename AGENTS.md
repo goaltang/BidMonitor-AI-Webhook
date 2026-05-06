@@ -119,6 +119,29 @@ with open(BASE_DIR / 'logs' / 'output.txt', 'w', encoding='utf-8') as f:
 
 ## 🎯 特殊说明
 
-- `scripts/` vs `tools/` 的区别：
-  - `scripts/`：项目生命周期内长期使用的系统脚本（打包、验证、部署）
-  - `tools/`：针对特定问题的一次性分析、诊断、数据迁移脚本，用完后可归档或删除
+## 📝 Commit Message 规范
+
+所有提交**统一使用中文**，禁止中英混杂。
+
+```
+<type>(<scope>): <简短描述>
+```
+
+| 类型 | 含义 |
+|------|------|
+| `feat` | 新功能 |
+| `fix` | 修复 Bug |
+| `docs` | 文档 |
+| `refactor` | 重构 |
+| `perf` | 性能优化 |
+| `test` | 测试 |
+| `chore` | 杂项（目录整理、依赖升级等） |
+
+完整规范参考 `docs/COMMIT_CONVENTION.md`。
+
+---
+
+## 🗂️ scripts/ vs tools/ 的区别
+
+- `scripts/`：项目生命周期内长期使用的系统脚本（打包、验证、部署）
+- `tools/`：针对特定问题的一次性分析、诊断、数据迁移脚本，用完后可归档或删除
