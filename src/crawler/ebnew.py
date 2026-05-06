@@ -53,15 +53,15 @@ class EbnewCrawler(BaseCrawler):
                 if not title or len(title) < 10:
                     continue
                 
-                # 关键字过滤
+                # 仅保留招标相关词过滤（避免抓到导航链接/广告）
+                # 搜索词过滤已下沉到 KeywordMatcher 统一处理
                 title_lower = title.lower()
-                keywords_lower = [kw.lower() for kw in self.search_keywords]
                 bid_keywords = ['招标', '中标', '采购', '公告', '项目']
                 
                 has_bid_keyword = any(kw in title_lower for kw in bid_keywords)
-                has_search_keyword = any(kw in title_lower for kw in keywords_lower)
                 
-                if not (has_bid_keyword or has_search_keyword):
+                if not has_bid_keyword:
+                    self.logger.debug(f"[{self.name}] 非招标标题跳过: {title[:40]}...")
                     continue
                 
                 url = item.get('href', '')

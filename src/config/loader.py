@@ -87,6 +87,12 @@ def load_config(
 ) -> AppConfig:
     """加载应用配置
     
+    配置加载优先级：
+    1. 用户指定的 path
+    2. user_config.json（GUI 用户配置，优先）
+    3. config.yaml / config.yml（CLI/Server 配置）
+    4. config.json
+    
     Args:
         path: 配置文件路径，None 则自动搜索
         fill_defaults: 是否用行业默认值填充空字段
@@ -102,15 +108,21 @@ def load_config(
         else:
             raw_data = _load_yaml(path) or {}
     else:
-        # 自动搜索 YAML 或 JSON
-        for ext in [".yaml", ".yml", ".json"]:
-            found = find_config_file(f"config{ext}")
-            if found:
-                if found.endswith(".json"):
-                    raw_data = _load_json(found) or {}
-                else:
-                    raw_data = _load_yaml(found) or {}
-                break
+        # 优先搜索 user_config.json（GUI 配置为单一事实来源）
+        user_config = find_config_file("user_config.json")
+        if user_config:
+            raw_data = _load_json(user_config) or {}
+        
+        # 回退到 YAML/JSON 配置
+        if not raw_data:
+            for ext in [".yaml", ".yml", ".json"]:
+                found = find_config_file(f"config{ext}")
+                if found:
+                    if found.endswith(".json"):
+                        raw_data = _load_json(found) or {}
+                    else:
+                        raw_data = _load_yaml(found) or {}
+                    break
     
     config = AppConfig.from_legacy_dict(raw_data)
     
@@ -128,6 +140,7 @@ def _fill_industry_defaults(config: AppConfig) -> None:
             DEFAULT_INCLUDE_KEYWORDS,
             DEFAULT_EXCLUDE_KEYWORDS,
             DEFAULT_MUST_CONTAIN_KEYWORDS,
+            DEFAULT_SEARCH_KEYWORDS,
         )
     except ImportError:
         import sys
@@ -136,6 +149,7 @@ def _fill_industry_defaults(config: AppConfig) -> None:
             DEFAULT_INCLUDE_KEYWORDS,
             DEFAULT_EXCLUDE_KEYWORDS,
             DEFAULT_MUST_CONTAIN_KEYWORDS,
+            DEFAULT_SEARCH_KEYWORDS,
         )
     
     if not config.industry.include:
@@ -144,6 +158,13 @@ def _fill_industry_defaults(config: AppConfig) -> None:
         config.industry.exclude = DEFAULT_EXCLUDE_KEYWORDS.copy()
     if not config.industry.must_contain:
         config.industry.must_contain = DEFAULT_MUST_CONTAIN_KEYWORDS.copy()
+    if not config.industry.search_keywords:
+        # 向后兼容：如果用户已配置过滤词但未配置搜索词，
+        # 使用过滤词前3个作为搜索词（保持修改前行为）
+        if config.industry.include:
+            config.industry.search_keywords = config.industry.include[:3]
+        else:
+            config.industry.search_keywords = DEFAULT_SEARCH_KEYWORDS.copy()
 
 
 def save_config(config: AppConfig, path: str) -> None:

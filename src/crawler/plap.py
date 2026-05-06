@@ -53,11 +53,8 @@ class PLAPCrawler(BaseCrawler):
                 if not title or len(title) < 5:
                     continue
                 
-                # 检查是否包含相关关键字
-                keywords_lower = [kw.lower() for kw in self.search_keywords]
-                title_lower = title.lower()
-                if not any(kw in title_lower for kw in keywords_lower):
-                    continue
+                # 搜索词过滤已下沉到 KeywordMatcher 统一处理
+                # 此处不再做标题硬过滤，避免标题不含搜索词但正文相关的招标被提前丢弃
                 
                 url = title_elem.get('href', '')
                 if url and not url.startswith('http'):

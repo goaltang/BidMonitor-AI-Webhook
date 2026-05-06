@@ -109,6 +109,7 @@ class IndustryConfig(BaseModel):
     include: List[str] = Field(default_factory=list, description="包含关键词（OR）")
     exclude: List[str] = Field(default_factory=list, description="排除关键词")
     must_contain: List[str] = Field(default_factory=list, description="必须包含关键词（AND）")
+    search_keywords: List[str] = Field(default_factory=list, description="用于各网站搜索框的关键词（独立于过滤词）")
 
 
 class AppConfig(BaseModel):
@@ -144,6 +145,7 @@ class AppConfig(BaseModel):
                 include=keywords_data.get("include", []),
                 exclude=keywords_data.get("exclude", []),
                 must_contain=keywords_data.get("must_contain", []),
+                search_keywords=keywords_data.get("search_keywords", []),
             )
         elif isinstance(keywords_data, list):
             kwargs["industry"] = IndustryConfig(include=keywords_data)
@@ -158,6 +160,25 @@ class AppConfig(BaseModel):
         # 爬虫配置
         if "crawler" in data:
             kwargs["crawler"] = CrawlerConfig(**data["crawler"])
+        
+        # 兼容 user_config.json 的顶层字段
+        crawler_overrides: Dict[str, Any] = {}
+        if "enabled_sites" in data:
+            crawler_overrides["enabled_sites"] = data["enabled_sites"]
+        if "custom_sites" in data:
+            crawler_overrides["custom_sites"] = data["custom_sites"]
+        if "use_selenium" in data:
+            crawler_overrides["use_selenium"] = data["use_selenium"]
+        if "site_configs" in data:
+            # site_configs 不属于 CrawlerConfig，暂存到 kwargs 供后续使用
+            kwargs["site_configs"] = data["site_configs"]
+        if crawler_overrides:
+            if "crawler" in kwargs:
+                existing = kwargs["crawler"].model_dump()
+                existing.update(crawler_overrides)
+                kwargs["crawler"] = CrawlerConfig(**existing)
+            else:
+                kwargs["crawler"] = CrawlerConfig(**crawler_overrides)
         
         # 通知配置
         if "email" in data:
