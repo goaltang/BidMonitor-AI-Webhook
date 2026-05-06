@@ -79,8 +79,8 @@ class AIGuard:
                     enabled=True,
                 )
         
-        # 如果环境变量有 key，覆盖 provider 的 key
-        if env_key and self.provider:
+        # 如果 provider 没有 key，才用环境变量回退（避免多 Provider 场景下错用 key）
+        if env_key and self.provider and not self.provider.api_key:
             self.provider.api_key = env_key
 
     @property
