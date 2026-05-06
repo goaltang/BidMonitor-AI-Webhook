@@ -1297,12 +1297,14 @@ class SiteManagerDialog:
         ttk.Label(legend_row, text=" 访问正常 ", font=("Microsoft YaHei", 9)).pack(side=tk.LEFT)
         tk.Label(legend_row, bg="#ff9800", width=2).pack(side=tk.LEFT, padx=(8, 0), pady=1)
         ttk.Label(legend_row, text=" 响应较慢 ", font=("Microsoft YaHei", 9)).pack(side=tk.LEFT)
+        tk.Label(legend_row, bg="#ff9800", width=2).pack(side=tk.LEFT, padx=(8, 0), pady=1)
+        ttk.Label(legend_row, text=" 功能降级 ", font=("Microsoft YaHei", 9)).pack(side=tk.LEFT)
         tk.Label(legend_row, bg="#f44336", width=2).pack(side=tk.LEFT, padx=(8, 0), pady=1)
         ttk.Label(legend_row, text=" 访问失败 ", font=("Microsoft YaHei", 9)).pack(side=tk.LEFT)
         tk.Label(legend_row, bg="#bdbdbd", width=2).pack(side=tk.LEFT, padx=(8, 0), pady=1)
         ttk.Label(legend_row, text=" 未检测", font=("Microsoft YaHei", 9)).pack(side=tk.LEFT)
         
-        ttk.Label(legend, text="提示: 搜索框可按名称快速查找；点击分类标题可展开/折叠；右侧「高级设置」可单独调整每个网站的参数", 
+        ttk.Label(legend, text="提示: 检测会启动真实爬虫探测（Selenium/Custom），🟢=能抓到数据，🟠=能访问但解析不到数据（可能改版），🔴=请求失败", 
                   foreground="gray", font=("Microsoft YaHei", 8), wraplength=580).pack(anchor=tk.W, pady=(4, 0))
         
     def _create_category_block(self, cat_name: str, sites: list):
@@ -1441,8 +1443,8 @@ class SiteManagerDialog:
                     self._toggle_category(cat_name)
     
     def _check_health(self):
-        """批量检测健康状态，带进度条"""
-        sites = {key: cfg['url'] for key, cfg in get_sites().items()}
+        """批量检测健康状态，带进度条（V2：探测与爬取统一）"""
+        sites = get_sites()  # 获取完整站点配置，用于构建真实 Crawler 探测
         total = len(sites)
         checked = [0]
         
@@ -1472,7 +1474,7 @@ class SiteManagerDialog:
         lbl = self.health_labels.get(key)
         if not lbl:
             return
-        colors = {"ok": "#4caf50", "slow": "#ff9800", "down": "#f44336"}
+        colors = {"ok": "#4caf50", "slow": "#ff9800", "degraded": "#ff9800", "down": "#f44336"}
         lbl.config(bg=colors.get(result.status, "#bdbdbd"))
         
     def _create_custom_tab(self, notebook):
@@ -1873,6 +1875,12 @@ class AIProviderDialog(tk.Toplevel):
         mode = self.mode_var.get()
         preset_id = getattr(self, '_current_preset_id', '')
         
+        model = self.model_var.get().strip()
+        models = list(self.model_combo['values'])
+        # 自定义模式下 values 可能为空，确保当前 model 在列表中
+        if model and model not in models:
+            models.append(model)
+        
         result = {
             'id': self.provider_data.get('id', '') or f"provider_{os.urandom(4).hex()}",
             'name': self.name_var.get().strip() or '未命名',
@@ -1880,8 +1888,8 @@ class AIProviderDialog(tk.Toplevel):
             'preset_id': preset_id if mode == 'preset' else '',
             'base_url': self.url_var.get().strip(),
             'api_key': self.key_var.get().strip(),
-            'model': self.model_var.get().strip(),
-            'models': list(self.model_combo['values']),
+            'model': model,
+            'models': models,
             'notes': self.notes_var.get().strip(),
             'enabled': self.provider_data.get('enabled', True),
             'latency_ms': self.provider_data.get('latency_ms', 0),
@@ -2272,9 +2280,11 @@ class MonitorGUI:
     DEFAULT_INTERVAL = 20
     
     CONFIG_FILE = "user_config.json"
-    LOG_FILE = "output_log.txt"
+    LOG_FILE = "logs/output_log.txt"
     
     def __init__(self):
+        import os
+        os.makedirs("logs", exist_ok=True)
         self.root = tk.Tk()
         self.root.title("招标信息监控系统")
         self.root.geometry("720x920")
@@ -3925,6 +3935,8 @@ class MonitorGUI:
             try:
                 with open(self.CONFIG_FILE, 'r', encoding='utf-8') as f:
                     config = json.load(f)
+                    # 先读取 .env 敏感配置，供后续回填使用
+                    env_secrets = self._read_env_file()
                     self.keywords_var.set(config.get('keywords', self.DEFAULT_KEYWORDS))
                     self.exclude_var.set(config.get('exclude', self.DEFAULT_EXCLUDE))
                     self.must_contain_var.set(config.get('must_contain', self.DEFAULT_MUST_CONTAIN))
@@ -3954,7 +3966,6 @@ class MonitorGUI:
                     # 加载联系人列表
                     self.contacts = config.get('contacts', self.contacts)
                     # 加载 AI 配置（V2 - 多Provider管理模式）
-                    env_secrets = self._read_env_file()
                     if 'ai' in config:
                         ai_cfg = config['ai']
                         if hasattr(self, 'ai_enable_var'):
@@ -3986,13 +3997,10 @@ class MonitorGUI:
                                 }]
                                 self._ai_active_id = 'legacy_migrated'
                         else:
-                            # === 关键修复：从 .env 回填每个 Provider 的 API Key ===
+                            # 从 .env 回填每个 Provider 的 API Key（只用独立 key，不用 DEEPSEEK_API_KEY 回退，避免多 Provider 错用）
                             for p in self._ai_providers:
                                 pid = p.get('id', '')
-                                # 优先读取 AI_KEY_<id>，回退到 DEEPSEEK_API_KEY
-                                key = env_secrets.get(f'AI_KEY_{pid}', '')
-                                if not key:
-                                    key = env_secrets.get('DEEPSEEK_API_KEY', '')
+                                key = env_secrets.get(f'AI_KEY_{pid}', '') if pid else ''
                                 if key:
                                     p['api_key'] = key
                         
@@ -4059,7 +4067,8 @@ class MonitorGUI:
         groups = {
             'DEEPSEEK_API_KEY': '# AI 配置\n',
             'EMAIL_SMTP_PASSWORD': '\n# 邮箱授权码\n',
-            'SMS_ACCESS_KEY_SECRET': '\n# 短信/语音 AccessKey Secret\n',
+            'SMS_ACCESS_KEY_SECRET': '\n# 短信 AccessKey Secret\n',
+            'VOICE_ACCESS_KEY_SECRET': '\n# 语音 AccessKey Secret\n',
         }
         written_keys = set()
         for key, comment in groups.items():
@@ -4401,8 +4410,6 @@ class MonitorGUI:
                     if not p_copy.get('api_key'):
                         pid = p_copy.get('id', '')
                         key = env_secrets.get(f'AI_KEY_{pid}', '') if pid else ''
-                        if not key:
-                            key = env_secrets.get('DEEPSEEK_API_KEY', '')
                         p_copy['api_key'] = key
                     providers_with_key.append(p_copy)
                 

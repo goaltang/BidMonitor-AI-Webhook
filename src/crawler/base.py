@@ -215,6 +215,63 @@ class BaseCrawler(ABC):
             if sign.lower() in html_lower:
                 return True
         return False
+    
+    def probe(self) -> Dict[str, Any]:
+        """
+        轻量级业务探测：尝试抓取第一个列表页并解析至少1条数据。
+        
+        探测通过 = 该站点当前可用真实爬取路径正常访问并解析到数据。
+        
+        Returns:
+            {
+                "status": str,      # "ok" | "slow" | "degraded" | "down"
+                "latency": float,   # 耗时（秒）
+                "sample": str,      # 成功时抓到的第一条数据标题
+                "error": str,       # 失败时的错误描述
+                "error_type": str,  # 错误分类（network/parse/config/exception）
+            }
+        """
+        import time
+        start = time.time()
+        
+        try:
+            urls = self.get_list_urls()
+            if not urls:
+                return {
+                    "status": "down", "latency": 0.0,
+                    "sample": "", "error": "无列表URL", "error_type": "config"
+                }
+            
+            html = self.fetch(urls[0])
+            elapsed = time.time() - start
+            
+            if html is None:
+                return {
+                    "status": "down", "latency": elapsed,
+                    "sample": "", "error": "请求失败", "error_type": "network"
+                }
+            
+            bids = self.parse(html)
+            elapsed = time.time() - start
+            
+            if not bids:
+                return {
+                    "status": "degraded", "latency": elapsed,
+                    "sample": "", "error": "解析到0条数据", "error_type": "parse"
+                }
+            
+            # 3秒阈值区分 ok / slow
+            status = "ok" if elapsed < 3.0 else "slow"
+            return {
+                "status": status, "latency": elapsed,
+                "sample": bids[0].title[:60], "error": "", "error_type": ""
+            }
+            
+        except Exception as e:
+            return {
+                "status": "down", "latency": time.time() - start,
+                "sample": "", "error": str(e)[:100], "error_type": type(e).__name__
+            }
 
 
 class DemoCrawler(BaseCrawler):
