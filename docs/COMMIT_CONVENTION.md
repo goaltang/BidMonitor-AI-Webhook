@@ -98,6 +98,42 @@ fix: 修复 bug
 
 ---
 
+## 原子提交原则
+
+一次提交**只包含一个逻辑改动**，不要把不相关的改动混在一起。
+
+### 正确做法
+
+```bash
+# ✅ 提交 A：整理目录
+git add AGENTS.md .gitignore README.md
+git commit -m "chore: 整理根目录文件并创建 AGENTS.md"
+
+# ✅ 提交 B：写文档（与目录整理无关，单独提交）
+git add docs/COMMIT_CONVENTION.md
+git commit -m "docs: 新增 Commit Message 规范"
+```
+
+### 错误做法
+
+```bash
+# ❌ 目录整理 + 文档规范 + 修复 Bug 全混在一起
+git add -A
+git commit -m "chore: 整理目录并写规范和修复问题"
+```
+
+### 判断标准
+
+如果 `git diff --stat` 显示改动的文件**类型混杂**（如同时改了代码、文档、配置文件），就应该拆分提交。
+
+| 情况 | 处理方式 |
+|------|---------|
+| 改代码时发现文档也要更新 | 先提交代码，再单独提交文档 |
+| 改功能 A 时发现功能 B 也有问题 | 暂存 B 的改动，先提交 A，再提交 B |
+| 修复 Bug 时顺手整理了代码格式 | 拆成 `fix` 和 `style` 两次提交 |
+
+---
+
 ## 多行提交
 
 当改动涉及多个方面时，用 `-m` 分条说明：
