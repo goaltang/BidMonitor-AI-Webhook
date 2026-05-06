@@ -1188,7 +1188,11 @@ class SiteManagerDialog:
         self.enabled_sites = set(enabled_sites)
         self.custom_sites = list(custom_sites)
         self.site_configs = dict(site_configs) if site_configs else {}
-        self.health_checker = SiteHealthChecker()
+        
+        # Phase 2: 初始化 Storage 并接入健康检测器
+        from database.storage import Storage
+        self.storage = Storage()
+        self.health_checker = SiteHealthChecker(storage=self.storage)
         
         self.dialog = tk.Toplevel(parent)
         self.dialog.title("监控网站管理")
@@ -1271,6 +1275,7 @@ class SiteManagerDialog:
         self.category_widgets = {}
         self.site_rows = {}
         self.health_labels = {}
+        self.health_tooltips = {}  # Phase 2: 悬停提示
         
         sites_by_cat = get_sites_by_category()
         
@@ -1306,6 +1311,59 @@ class SiteManagerDialog:
         
         ttk.Label(legend, text="提示: 检测会启动真实爬虫探测（Selenium/Custom），🟢=能抓到数据，🟠=能访问但解析不到数据（可能改版），🔴=请求失败", 
                   foreground="gray", font=("Microsoft YaHei", 8), wraplength=580).pack(anchor=tk.W, pady=(4, 0))
+        
+        # Phase 2: 从数据库加载历史状态预渲染色块
+        self._load_health_from_db()
+        
+    def _load_health_from_db(self):
+        """从数据库读取最近探测状态，预渲染色块"""
+        if self.storage is None:
+            return
+        for key, lbl in self.health_labels.items():
+            latest = self.storage.get_latest_probe(key)
+            if latest:
+                status = latest.get('status', 'down')
+                colors = {"ok": "#4caf50", "slow": "#ff9800", "degraded": "#ff9800", "down": "#f44336"}
+                lbl.config(bg=colors.get(status, "#bdbdbd"))
+                # 更新悬停提示
+                self._update_health_tooltip(key, latest)
+    
+    def _update_health_tooltip(self, key: str, probe: dict):
+        """更新站点健康色块的悬停提示"""
+        lbl = self.health_labels.get(key)
+        if not lbl:
+            return
+        
+        status = probe.get('status', 'unknown')
+        checked_at = probe.get('checked_at', '')
+        sample = probe.get('sample', '')
+        error_type = probe.get('error_type', '')
+        
+        # 计算24小时可用率
+        rate = self.storage.get_site_success_rate(key, window_hours=24)
+        rate_str = f"{rate*100:.0f}%"
+        
+        lines = [
+            f"状态: {status}",
+            f"24h可用率: {rate_str}",
+        ]
+        if checked_at:
+            lines.append(f"最近探测: {checked_at[:19]}")
+        if sample:
+            lines.append(f"样本: {sample[:40]}")
+        if error_type:
+            lines.append(f"错误类型: {error_type}")
+        
+        tip_text = "\n".join(lines)
+        
+        # 销毁旧提示，创建新提示
+        old_tip = self.health_tooltips.get(key)
+        if old_tip is not None:
+            try:
+                old_tip.hidetip()
+            except Exception:
+                pass
+        self.health_tooltips[key] = ToolTip(lbl, tip_text)
         
     def _create_category_block(self, cat_name: str, sites: list):
         """创建一个分类块（带自定义标题行和可折叠内容）"""
@@ -1358,6 +1416,8 @@ class SiteManagerDialog:
             health_box = tk.Label(row, bg="#bdbdbd", width=2)
             health_box.pack(side=tk.LEFT)
             self.health_labels[key] = health_box
+            # Phase 2: 初始化悬停提示占位
+            self.health_tooltips[key] = None
             
             # 开关
             cb = ttk.Checkbutton(row, text=name, variable=var)
@@ -1476,6 +1536,14 @@ class SiteManagerDialog:
             return
         colors = {"ok": "#4caf50", "slow": "#ff9800", "degraded": "#ff9800", "down": "#f44336"}
         lbl.config(bg=colors.get(result.status, "#bdbdbd"))
+        # Phase 2: 同步更新悬停提示
+        probe = {
+            "status": result.status,
+            "checked_at": result.checked_at,
+            "sample": result.sample,
+            "error_type": result.error_type,
+        }
+        self._update_health_tooltip(key, probe)
         
     def _create_custom_tab(self, notebook):
         frame = ttk.Frame(notebook, padding="10")
@@ -2274,9 +2342,21 @@ class ThemeConfigDialog(tk.Toplevel):
 class MonitorGUI:
     """招投标监控系统GUI - V3 多邮箱支持"""
     
-    DEFAULT_KEYWORDS = "高低压成套设备,高压开关柜,低压配电柜,箱式变电站,配电箱,环网柜,开闭所,箱变,高压柜,低压柜,开关柜,配电柜,成套设备,电气设备,电力设备,变电站设备,配电房设备,电容柜,补偿柜,抽屉柜,动力柜,控制柜"
-    DEFAULT_EXCLUDE = "电线电缆,变压器,电力施工,电力安装,弱电,智能化,安防,消防,设计,监理,咨询,培训,清洗,清洁,运输"
-    DEFAULT_MUST_CONTAIN = "柜"
+    # 从 domain.industry 读取默认值，保持 GUI/CLI/Server 三端一致
+    try:
+        from domain.industry import (
+            DEFAULT_INCLUDE_KEYWORDS,
+            DEFAULT_EXCLUDE_KEYWORDS,
+            DEFAULT_MUST_CONTAIN_KEYWORDS,
+        )
+        DEFAULT_KEYWORDS = ",".join(DEFAULT_INCLUDE_KEYWORDS)
+        DEFAULT_EXCLUDE = ",".join(DEFAULT_EXCLUDE_KEYWORDS)
+        DEFAULT_MUST_CONTAIN = ",".join(DEFAULT_MUST_CONTAIN_KEYWORDS)
+    except ImportError:
+        # Fallback：当导入失败时（如打包环境路径问题）使用硬编码
+        DEFAULT_KEYWORDS = "高低压成套设备,高压开关柜,低压配电柜,箱式变电站,配电箱,环网柜,开闭所,箱变,高压柜,低压柜,开关柜,配电柜,成套设备,电容补偿柜,电容柜,补偿柜,抽屉柜,动力柜,控制柜,GGD,GCK,GCS,MNS,KYN28,HXGN,配电房设备,变电站成套,变电站设备"
+        DEFAULT_EXCLUDE = "电线电缆,变压器,电力施工,电力安装,弱电,智能化,安防,消防,设计,监理,咨询,培训,清洗,清洁,运输,仅施工,劳务分包"
+        DEFAULT_MUST_CONTAIN = ""
     DEFAULT_INTERVAL = 20
     
     CONFIG_FILE = "user_config.json"

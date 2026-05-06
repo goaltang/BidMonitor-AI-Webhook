@@ -33,6 +33,7 @@ class SiteHealthChecker:
     """网站健康状态检测器 V2
     
     探测逻辑下沉到各 Crawler 实现，确保"探测通过 = 能爬取"。
+    支持将探测结果持久化到 Storage。
     """
     
     # 状态阈值（秒）
@@ -41,10 +42,11 @@ class SiteHealthChecker:
     # 最小检测间隔（秒）
     MIN_CHECK_INTERVAL = 300  # 5 分钟
     
-    def __init__(self):
+    def __init__(self, storage=None):
         self._cache: Dict[str, HealthResult] = {}
         self._last_check: Dict[str, float] = {}
         self._lock = threading.Lock()
+        self.storage = storage  # Phase 2: 可选的持久化存储
     
     def _create_crawler(self, site_key: str, site_cfg: Dict[str, Any]) -> Optional[Any]:
         """根据站点配置创建对应的 Crawler 实例（仅用于探测）
@@ -168,6 +170,20 @@ class SiteHealthChecker:
         with self._lock:
             self._cache[site_key] = result
             self._last_check[site_key] = now
+        
+        # Phase 2: 持久化探测记录
+        if self.storage is not None:
+            try:
+                self.storage.save_probe_log(
+                    site_key=site_key,
+                    status=result.status,
+                    latency_ms=int(result.response_time * 1000),
+                    error_type=result.error_type,
+                    sample=result.sample
+                )
+            except Exception:
+                # 存储失败不应影响检测流程
+                pass
         
         return result
     

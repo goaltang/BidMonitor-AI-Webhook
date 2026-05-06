@@ -45,12 +45,13 @@ def setup_logging(config: AppConfig):
 class BidMonitor:
     """招标监控器主类"""
     
-    def __init__(self, config: AppConfig):
+    def __init__(self, config: AppConfig, circuit_breaker=None):
         self.config = config
         self.logger = logging.getLogger("monitor")
         
         # 初始化组件
         self.storage = Storage()
+        self.circuit_breaker = circuit_breaker
         self.matcher = KeywordMatcher(
             include_keywords=config.industry.include,
             exclude_keywords=config.industry.exclude,
@@ -72,9 +73,11 @@ class BidMonitor:
         for site in enabled_sites:
             if site in crawler_classes:
                 crawler_class = crawler_classes[site]
+                # 使用显式配置的 search_keywords（与过滤词分离）
+                search_keywords = config.industry.search_keywords or config.industry.include[:3]
                 crawler = crawler_class({
                     **crawler_cfg.model_dump(),
-                    'search_keywords': config.industry.include[:3]  # 使用前3个关键字搜索
+                    'search_keywords': search_keywords
                 })
                 self.crawlers.append(crawler)
                 self.logger.info(f"已启用爬虫: {site}")
@@ -88,29 +91,40 @@ class BidMonitor:
         
         # 遍历所有爬虫
         for crawler in self.crawlers:
+            # Phase 2: 熔断器检查
+            if self.circuit_breaker and self.circuit_breaker.should_skip(crawler.name):
+                state = self.circuit_breaker.get_state(crawler.name)
+                self.logger.info(f"[SKIP] {crawler.name}: 熔断器状态 {state}，跳过调度")
+                continue
+            
+            crawl_success = False
             try:
                 self.logger.info(f"正在爬取: {crawler.name}")
                 bids = crawler.crawl()
                 
                 if bids is None:
                     self.logger.warning(f"爬虫 {crawler.name} 返回空结果，可能请求失败")
-                    continue
-                
-                # 匹配关键字
-                for bid in bids:
-                    match_result = self.matcher.match_any(bid.title, bid.content)
-                    
-                    if match_result.matched:
-                        # 检查是否已存在
-                        if not self.storage.exists(bid):
-                            self.storage.save(bid, notified=False)
-                            all_matched_bids.append(bid)
-                            self.logger.info(f"[新] 匹配招标: {bid.title[:50]}... 关键字: {match_result.matched_keywords}")
-                    elif match_result.excluded_by:
-                        self.logger.debug(f"排除: {bid.title[:30]}... (包含排除词: {match_result.excluded_by})")
+                else:
+                    crawl_success = True
+                    # 匹配关键字
+                    for bid in bids:
+                        match_result = self.matcher.match_any(bid.title, bid.content)
+                        
+                        if match_result.matched:
+                            # 检查是否已存在
+                            if not self.storage.exists(bid):
+                                self.storage.save(bid, notified=False)
+                                all_matched_bids.append(bid)
+                                self.logger.info(f"[新] 匹配招标: {bid.title[:50]}... 关键字: {match_result.matched_keywords}")
+                        elif match_result.excluded_by:
+                            self.logger.debug(f"排除: {bid.title[:30]}... (包含排除词: {match_result.excluded_by})")
                         
             except Exception as e:
                 self.logger.error(f"爬虫 {crawler.name} 执行失败: {e}")
+            finally:
+                # Phase 2: 记录熔断结果
+                if self.circuit_breaker:
+                    self.circuit_breaker.record(crawler.name, crawl_success)
         
         # 发送通知
         if all_matched_bids:

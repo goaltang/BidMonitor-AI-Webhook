@@ -86,6 +86,21 @@ class Storage:
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_notified ON bids(notified)
             """)
+            # Phase 2: 站点探测日志表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS site_probe_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    site_key TEXT NOT NULL,
+                    status TEXT,
+                    latency_ms INTEGER,
+                    error_type TEXT,
+                    sample TEXT,
+                    checked_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_probe_site_time ON site_probe_log(site_key, checked_at)
+            """)
             conn.commit()
     
     def exists(self, bid: BidInfo) -> bool:
@@ -235,3 +250,98 @@ class Storage:
         cursor = conn.cursor()
         cursor.execute("DELETE FROM bids")
         conn.commit()
+    
+    # ------------------------------------------------------------------
+    # Phase 2: 站点探测日志（site_probe_log）
+    # ------------------------------------------------------------------
+    
+    def save_probe_log(self, site_key: str, status: str, latency_ms: int,
+                       error_type: str = "", sample: str = "") -> None:
+        """保存单次站点探测记录"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO site_probe_log (site_key, status, latency_ms, error_type, sample, checked_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (site_key, status, latency_ms, error_type, sample[:200],
+              datetime.now().isoformat()))
+        conn.commit()
+    
+    def get_probe_history(self, site_key: str, limit: int = 10) -> list:
+        """获取站点最近 N 次探测记录
+        
+        Returns:
+            list[dict]: 每条记录包含 status, latency_ms, error_type, sample, checked_at
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT status, latency_ms, error_type, sample, checked_at
+            FROM site_probe_log
+            WHERE site_key = ?
+            ORDER BY checked_at DESC
+            LIMIT ?
+        """, (site_key, limit))
+        rows = cursor.fetchall()
+        return [
+            {
+                "status": row[0],
+                "latency_ms": row[1],
+                "error_type": row[2],
+                "sample": row[3],
+                "checked_at": row[4],
+            }
+            for row in rows
+        ]
+    
+    def get_site_success_rate(self, site_key: str, window_hours: int = 24) -> float:
+        """计算站点在指定时间窗口内的成功率
+        
+        Args:
+            site_key: 站点标识
+            window_hours: 时间窗口（小时）
+            
+        Returns:
+            成功率（0.0 ~ 1.0），无记录时返回 1.0
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT 
+                COUNT(*) as total,
+                SUM(CASE WHEN status IN ('ok', 'slow') THEN 1 ELSE 0 END) as success
+            FROM site_probe_log
+            WHERE site_key = ?
+              AND datetime(checked_at) > datetime('now', ?)
+        """, (site_key, f'-{window_hours} hours'))
+        row = cursor.fetchone()
+        total, success = row[0], row[1] or 0
+        if total == 0:
+            return 1.0
+        return success / total
+    
+    def get_latest_probe(self, site_key: str) -> Optional[dict]:
+        """获取站点最近一次探测记录
+        
+        Returns:
+            dict 或 None
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT status, latency_ms, error_type, sample, checked_at
+            FROM site_probe_log
+            WHERE site_key = ?
+            ORDER BY checked_at DESC
+            LIMIT 1
+        """, (site_key,))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return {
+            "status": row[0],
+            "latency_ms": row[1],
+            "error_type": row[2],
+            "sample": row[3],
+            "checked_at": row[4],
+        }

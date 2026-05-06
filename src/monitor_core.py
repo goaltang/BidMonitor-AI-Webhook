@@ -34,30 +34,37 @@ class MonitorCore:
                  keywords: List[str],
                  exclude_keywords: List[str] = None,
                  must_contain_keywords: List[str] = None,
+                 search_keywords: List[str] = None,
                  notify_method: str = "email",
                  email: str = "",
                  phone: str = "",
                  email_config: Dict[str, Any] = None,
                  sms_config: Dict[str, Any] = None,
                  log_callback: Callable[[str], None] = None,
-                 ai_config: Dict[str, Any] = None):
+                 ai_config: Dict[str, Any] = None,
+                 circuit_breaker=None):
         """
         初始化监控核心
         
         Args:
-            keywords: 搜索关键字列表 (OR组 - 行业词)
+            keywords: 过滤关键字列表 (OR组 - 行业词)，用于 KeywordMatcher
             exclude_keywords: 排除关键字列表
             must_contain_keywords: 必须包含关键字列表 (AND组 - 产品词)
+            search_keywords: 网站搜索关键字列表（独立于过滤词，用于爬虫构造搜索URL）
+                             如未提供，默认取 keywords 前3个保持兼容
             notify_method: 通知方式 (email/sms/both)
             email: 邮箱地址
             phone: 手机号
             email_config: 邮件配置
             sms_config: 短信配置
             log_callback: 日志回调函数
+            circuit_breaker: 可选的熔断器实例（Phase 2）
         """
         self.keywords = keywords
         self.exclude_keywords = exclude_keywords or []
         self.must_contain_keywords = must_contain_keywords or []
+        # 搜索词与过滤词分离：未显式配置时回退到 keywords 前3个（向后兼容）
+        self.search_keywords = search_keywords if search_keywords is not None else (keywords[:3] if keywords else [])
         self.notify_method = notify_method
         self.email = email
         self.phone = phone
@@ -65,6 +72,7 @@ class MonitorCore:
         
         # 初始化组件
         self.storage = Storage()
+        self.circuit_breaker = circuit_breaker
         self.matcher = KeywordMatcher(keywords, exclude_keywords, must_contain_keywords)
         
         # 加载配置文件
@@ -126,7 +134,7 @@ class MonitorCore:
         """初始化所有爬虫"""
         crawlers = []
         crawler_config = self.config.get('crawler', {})
-        crawler_config['search_keywords'] = self.keywords[:3]
+        crawler_config['search_keywords'] = self.search_keywords
         
         # 获取启用的网站列表
         enabled = crawler_config.get('enabled_sites', [])
@@ -248,10 +256,17 @@ class MonitorCore:
                 self.log("检测到停止信号，中断爬取")
                 break
             
+            # Phase 2: 熔断器检查
+            if self.circuit_breaker and self.circuit_breaker.should_skip(crawler.name):
+                state = self.circuit_breaker.get_state(crawler.name)
+                self.log(f"[SKIP] {crawler.name}: 熔断器状态 {state}，跳过调度")
+                continue
+            
             # 调用进度回调
             if progress_callback:
                 progress_callback(idx, total_crawlers, crawler.name)
             
+            crawl_success = False
             try:
                 self.log(f"Crawling: {crawler.name}...")
                 bids = crawler.crawl(stop_event=stop_event)
@@ -268,53 +283,58 @@ class MonitorCore:
                         'error': 'Failed to fetch data (possibly blocked)'
                     })
                     self.log(f"[FAILED] {crawler.name}: Website may be blocking requests!")
-                    continue
-                
-                # 匹配关键字
-                matched_count = 0
-                for bid in bids:
-                    # 在匹配过程中也检查停止信号
-                    if stop_event and stop_event.is_set():
-                        self.log("检测到停止信号，中断匹配")
-                        break
+                else:
+                    crawl_success = True
                     
-                    result = self.matcher.match_any(bid.title, bid.content)
+                    # 匹配关键字
+                    matched_count = 0
+                    for bid in bids:
+                        # 在匹配过程中也检查停止信号
+                        if stop_event and stop_event.is_set():
+                            self.log("检测到停止信号，中断匹配")
+                            break
+                        
+                        result = self.matcher.match_any(bid.title, bid.content)
+                        
+                        if result.matched:
+                            # 记录关键词匹配的项目
+                            ai_stats['keyword_matched'].append({
+                                'title': bid.title,
+                                'url': bid.url
+                            })
+                            
+                            # AI 二次过滤 (如果启用)
+                            if self.ai_guard:
+                                ai_relevant, ai_reason = self.ai_guard.check_relevance(bid.title, bid.content or "")
+                                if not ai_relevant:
+                                    ai_stats['ai_rejected'].append({
+                                        'title': bid.title,
+                                        'url': bid.url,
+                                        'reason': ai_reason
+                                    })
+                                    self.log(f"[AI过滤] 跳过: {bid.title[:30]}... (原因: {ai_reason})")
+                                    continue
+                                else:
+                                    ai_stats['ai_approved'].append({
+                                        'title': bid.title,
+                                        'url': bid.url,
+                                        'reason': ai_reason
+                                    })
+                            
+                            if not self.storage.exists(bid):
+                                self.storage.save(bid, notified=False)
+                                all_matched_bids.append(bid)
+                                matched_count += 1
                     
-                    if result.matched:
-                        # 记录关键词匹配的项目
-                        ai_stats['keyword_matched'].append({
-                            'title': bid.title,
-                            'url': bid.url
-                        })
-                        
-                        # AI 二次过滤 (如果启用)
-                        if self.ai_guard:
-                            ai_relevant, ai_reason = self.ai_guard.check_relevance(bid.title, bid.content or "")
-                            if not ai_relevant:
-                                ai_stats['ai_rejected'].append({
-                                    'title': bid.title,
-                                    'url': bid.url,
-                                    'reason': ai_reason
-                                })
-                                self.log(f"[AI过滤] 跳过: {bid.title[:30]}... (原因: {ai_reason})")
-                                continue
-                            else:
-                                ai_stats['ai_approved'].append({
-                                    'title': bid.title,
-                                    'url': bid.url,
-                                    'reason': ai_reason
-                                })
-                        
-                        if not self.storage.exists(bid):
-                            self.storage.save(bid, notified=False)
-                            all_matched_bids.append(bid)
-                            matched_count += 1
-                
-                self.log(f"[OK] {crawler.name}: Found {len(bids)} items, {matched_count} new matches")
+                    self.log(f"[OK] {crawler.name}: Found {len(bids)} items, {matched_count} new matches")
                 
             except Exception as e:
                 failed_sites.append({'name': crawler.name, 'error': str(e)})
                 self.log(f"[ERROR] {crawler.name}: {e}")
+            finally:
+                # Phase 2: 记录熔断结果
+                if self.circuit_breaker:
+                    self.circuit_breaker.record(crawler.name, crawl_success)
         
         # 发送通知
         if all_matched_bids:
